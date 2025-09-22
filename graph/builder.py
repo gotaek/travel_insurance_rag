@@ -9,6 +9,7 @@ from graph.nodes.answerers.qa import qa_node
 from graph.nodes.answerers.summarize import summarize_node
 from graph.nodes.answerers.compare import compare_node
 from graph.nodes.answerers.recommend import recommend_node
+from graph.nodes.trace import wrap_with_trace
 
 def _decide_answer_node(state: RAGState) -> str:
     intent = state.get("intent", "qa")
@@ -21,25 +22,22 @@ def _decide_answer_node(state: RAGState) -> str:
     return "answer_qa"
 
 def _needs_web_edge(state: RAGState) -> str:
-    if state.get("needs_web"):
-        return "websearch"
-    return "search"
+    return "websearch" if state.get("needs_web") else "search"
 
 def build_graph():
     g = StateGraph(RAGState)
 
-    # Nodes
-    g.add_node("planner", planner_node)
-    g.add_node("websearch", websearch_node)
-    g.add_node("search", search_node)
-    g.add_node("rank_filter", rank_filter_node)
-    g.add_node("verify_refine", verify_refine_node)
-    g.add_node("answer_summary", summarize_node)
-    g.add_node("answer_compare", compare_node)
-    g.add_node("answer_recommend", recommend_node)
-    g.add_node("answer_qa", qa_node)
+    # 모든 노드 trace 래핑
+    g.add_node("planner", wrap_with_trace(planner_node, "planner"))
+    g.add_node("websearch", wrap_with_trace(websearch_node, "websearch"))
+    g.add_node("search", wrap_with_trace(search_node, "search"))
+    g.add_node("rank_filter", wrap_with_trace(rank_filter_node, "rank_filter"))
+    g.add_node("verify_refine", wrap_with_trace(verify_refine_node, "verify_refine"))
+    g.add_node("answer_summary", wrap_with_trace(summarize_node, "answer_summary"))
+    g.add_node("answer_compare", wrap_with_trace(compare_node, "answer_compare"))
+    g.add_node("answer_recommend", wrap_with_trace(recommend_node, "answer_recommend"))
+    g.add_node("answer_qa", wrap_with_trace(qa_node, "answer_qa"))
 
-    # Edges
     g.set_entry_point("planner")
     g.add_conditional_edges("planner", _needs_web_edge, {"websearch": "websearch", "search": "search"})
     g.add_edge("websearch", "search")
