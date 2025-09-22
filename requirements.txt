@@ -9,3 +9,5 @@ langchain-core>=0.2.0
 faiss-cpu
 rank_bm25
 numpy
+
+tqdm
