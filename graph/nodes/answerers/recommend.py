@@ -1,33 +1,121 @@
 from typing import Dict, Any
+import json
+from pathlib import Path
 from app.deps import get_llm
-from graph.prompts.utils import load_prompt
-from graph.prompts.parser import parse_llm_output
+
+def _load_prompt(prompt_name: str) -> str:
+    """프롬프트 파일 로드"""
+    prompt_path = Path("/app/graph/prompts") / f"{prompt_name}.md"
+    return prompt_path.read_text(encoding="utf-8")
+
+def _format_context(passages: list) -> str:
+    """검색된 문서를 컨텍스트로 포맷팅"""
+    if not passages:
+        return "관련 문서를 찾을 수 없습니다."
+    
+    context_parts = []
+    for i, passage in enumerate(passages[:5], 1):  # 상위 5개만 사용
+        doc_id = passage.get("doc_id", "알 수 없음")
+        page = passage.get("page", "알 수 없음")
+        text = passage.get("text", "")[:500]  # 500자로 제한
+        context_parts.append(f"[문서 {i}] {doc_id} (페이지 {page})\n{text}\n")
+    
+    return "\n".join(context_parts)
+
+def _format_web_results(web_results: list) -> str:
+    """웹 검색 결과를 포맷팅"""
+    if not web_results:
+        return "실시간 뉴스 정보가 없습니다."
+    
+    web_parts = []
+    for i, result in enumerate(web_results[:3], 1):  # 상위 3개만 사용
+        title = result.get("title", "제목 없음")
+        snippet = result.get("snippet", "")[:200]  # 200자로 제한
+        web_parts.append(f"[뉴스 {i}] {title}\n{snippet}\n")
+    
+    return "\n".join(web_parts)
+
+def _parse_llm_response(response_text: str) -> Dict[str, Any]:
+    """LLM 응답을 JSON으로 파싱"""
+    try:
+        # JSON 부분만 추출 (```json ... ``` 형태일 수 있음)
+        if "```json" in response_text:
+            start = response_text.find("```json") + 7
+            end = response_text.find("```", start)
+            json_text = response_text[start:end].strip()
+        else:
+            json_text = response_text.strip()
+        
+        return json.loads(json_text)
+    except (json.JSONDecodeError, ValueError) as e:
+        # JSON 파싱 실패 시 기본 구조로 fallback
+        return {
+            "conclusion": "답변을 생성하는 중 오류가 발생했습니다.",
+            "evidence": ["응답 파싱 오류"],
+            "caveats": ["추가 확인이 필요합니다."],
+            "quotes": []
+        }
 
 def recommend_node(state: Dict[str, Any]) -> Dict[str, Any]:
-    refined = state.get("refined", [])
-    warnings = state.get("warnings", []) or []
-    policy_disclaimer = state.get("policy_disclaimer")
+    """
+    추천 에이전트: 여행 일정, 지역, 최신 뉴스를 고려하여 맞춤 특약 추천
+    """
+    question = state.get("question", "")
+    passages = state.get("passages", [])
     web_results = state.get("web_results", [])
+    
+    # 컨텍스트 포맷팅
+    context = _format_context(passages)
+    web_info = _format_web_results(web_results)
+    
+    # 프롬프트 로드
+    system_prompt = _load_prompt("system_core")
+    recommend_prompt = _load_prompt("recommend")
+    
+    # 최종 프롬프트 구성
+    full_prompt = f"""
+{system_prompt}
 
-    passages_text = "\n".join([p.get("text","") for p in refined])
-    news_text = "\n".join([r["snippet"] for r in web_results]) if web_results else ""
-    prompt = load_prompt("recommend") + f"\n\n질문: {state['question']}\n\n참고 문서:\n{passages_text}\n\n실시간 뉴스:\n{news_text}"
+{recommend_prompt}
 
+## 질문
+{question}
+
+## 참고 문서
+{context}
+
+## 실시간 뉴스/정보
+{web_info}
+
+위 정보를 참고하여 맞춤 추천을 해주세요. 반드시 JSON 형식으로 답변하세요.
+"""
+    
     try:
+        # LLM 호출
         llm = get_llm()
-        resp = llm.generate_content(prompt)
-        parsed = parse_llm_output(resp.text)
+        response = llm.generate_content(full_prompt)
+        
+        # 응답 파싱
+        answer = _parse_llm_response(response.text)
+        
+        # 출처 정보 추가
+        if passages:
+            answer["quotes"] = [
+                {
+                    "text": p.get("text", "")[:200] + "...",
+                    "source": f"{p.get('doc_id', '알 수 없음')}_페이지{p.get('page', '?')}"
+                }
+                for p in passages[:3]  # 상위 3개만
+            ]
+        
+        return {**state, "draft_answer": answer}
+        
     except Exception as e:
-        parsed = {"conclusion": f"(LLM 호출 실패: {e})", "evidence": [], "caveats": [], "quotes": []}
-
-    caveats = parsed.get("caveats", []) + warnings
-    if policy_disclaimer:
-        caveats.append(policy_disclaimer)
-
-    answer = {
-        "conclusion": parsed.get("conclusion", ""),
-        "evidence": parsed.get("evidence", []),
-        "caveats": caveats,
-        "quotes": parsed.get("quotes", []),
-    }
-    return {**state, "draft_answer": answer}
+        # LLM 호출 실패 시 fallback
+        fallback_answer = {
+            "conclusion": f"추천 생성 중 오류가 발생했습니다: '{question}'",
+            "evidence": ["LLM 호출 중 오류가 발생했습니다."],
+            "caveats": ["추가 확인이 필요합니다.", f"오류: {str(e)}"],
+            "quotes": []
+        }
+        return {**state, "draft_answer": fallback_answer}
