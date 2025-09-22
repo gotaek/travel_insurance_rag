@@ -42,9 +42,9 @@ INSURANCE_RAG/
 │
 ├─ data/
 │  ├─ documents/                # PDF 원천: 파일명 규칙 insurer_product_version(pages).pdf 유지
-│  └─ vector_db/
-│     ├─ index.faiss            # 벡터 인덱스(배포 산출물). CI에서 artifact로 업로드 가능
-│     └─ index.pkl              # 메타/ID 매핑(문서ID→페이지/좌표/버전). 스키마 변경 시 마이그레이션 스크립트 필요
+│  └─ vector_db/                # 벡터 DB (자동 생성, git 제외)
+│     ├─ index.faiss            # 벡터 인덱스 (make ingest로 재생성)
+│     └─ index.pkl              # 메타/ID 매핑 (make ingest로 재생성)
 │
 ├─ eval/                        # 오프라인 평가: 회귀 테스트와 지표 일괄 산출
 │  ├─ ragas_pipeline.py         # RAGAS 실행 파이프라인(questions.jsonl→scores.json)

@@ -68,3 +68,21 @@ pids
 # Windows
 Thumbs.db
 ehthumbs.db
+
+# Vector database files (auto-generated)
+data/vector_db/*.faiss
+data/vector_db/*.pkl
+data/vector_db/*.index
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Model cache
+.cache/
+models/
+
+# Evaluation outputs
+eval/out/
+*.json
