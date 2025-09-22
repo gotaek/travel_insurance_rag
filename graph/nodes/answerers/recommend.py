@@ -1,33 +1,33 @@
 from typing import Dict, Any
 from app.deps import get_llm
 from graph.prompts.utils import load_prompt
+from graph.prompts.parser import parse_llm_output
 
 def recommend_node(state: Dict[str, Any]) -> Dict[str, Any]:
     refined = state.get("refined", [])
-    citations = state.get("citations", [])
     warnings = state.get("warnings", []) or []
     policy_disclaimer = state.get("policy_disclaimer")
     web_results = state.get("web_results", [])
 
     passages_text = "\n".join([p.get("text","") for p in refined])
     news_text = "\n".join([r["snippet"] for r in web_results]) if web_results else ""
-    prompt = (
-        load_prompt("recommend")
-        + f"\n\n질문: {state['question']}\n\n참고 문서:\n{passages_text}\n\n실시간 뉴스:\n{news_text}"
-    )
+    prompt = load_prompt("recommend") + f"\n\n질문: {state['question']}\n\n참고 문서:\n{passages_text}\n\n실시간 뉴스:\n{news_text}"
 
     try:
         llm = get_llm()
         resp = llm.generate_content(prompt)
-        rec = (resp.text or "").strip()
+        parsed = parse_llm_output(resp.text)
     except Exception as e:
-        rec = f"(LLM 호출 실패: {e})"
+        parsed = {"conclusion": f"(LLM 호출 실패: {e})", "evidence": [], "caveats": [], "quotes": []}
 
-    caveats = warnings + ([policy_disclaimer] if policy_disclaimer else [])
+    caveats = parsed.get("caveats", []) + warnings
+    if policy_disclaimer:
+        caveats.append(policy_disclaimer)
+
     answer = {
-        "conclusion": rec[:150],
-        "evidence": [p.get("text") for p in refined[:2]] + ([news_text] if news_text else []),
+        "conclusion": parsed.get("conclusion", ""),
+        "evidence": parsed.get("evidence", []),
         "caveats": caveats,
-        "quotes": citations,
+        "quotes": parsed.get("quotes", []),
     }
     return {**state, "draft_answer": answer}
