@@ -1,0 +1,17 @@
+legal:
+  disclaimer: >
+    본 답변은 참고용 정보이며, 실제 보상/보장 여부 및 한도는
+    보험증권과 해당 상품의 최신 약관에 따릅니다. 정확한 확인을 위해
+    반드시 보험사 공식 문서 및 고객센터로 재확인하시기 바랍니다.
+
+web:
+  source_whitelist:
+    - mofa.go.kr
+    - cdc.gov
+    - who.int
+    - faa.gov
+    - fsc.go.kr
+
+answer:
+  min_citations: 1
+  min_context: 1
