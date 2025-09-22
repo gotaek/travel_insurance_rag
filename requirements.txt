@@ -2,3 +2,6 @@ fastapi
 uvicorn[standard]
 pydantic-settings
 python-dotenv
+
+langgraph>=0.0.50
+langchain-core>=0.2.0
