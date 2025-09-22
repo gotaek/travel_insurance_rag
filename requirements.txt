@@ -19,3 +19,18 @@ google-generativeai
 pandas
 datasets
 ragas
+
+# parsing
+pymupdf           # PyMuPDF 핵심
+pdfplumber        # 표 추출 보강(옵션)
+pdfminer.six      # pdfplumber 의존
+python-magic
+pandas
+
+# embeddings / vector
+FlagEmbedding
+torch
+faiss-cpu
+numpy
+tqdm
+scikit-learn

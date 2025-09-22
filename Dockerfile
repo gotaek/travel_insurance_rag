@@ -11,8 +11,11 @@
     WORKDIR ${APP_HOME}
     
     # healthcheck용 curl 설치
-    RUN apt-get update && apt-get install -y --no-install-recommends curl \
-        && rm -rf /var/lib/apt/lists/*
+    RUN apt-get update && apt-get install -y --no-install-recommends \
+        build-essential gcc g++ make \
+        zlib1g-dev libjpeg62-turbo-dev libopenjp2-7-dev libpng-dev \
+        libmagic1 ghostscript \
+    && rm -rf /var/lib/apt/lists/*
     
     # 의존성 먼저 복사/설치
     COPY requirements.txt .
