@@ -93,7 +93,7 @@ def recommend_node(state: Dict[str, Any]) -> Dict[str, Any]:
     try:
         # LLM 호출
         llm = get_llm()
-        response = llm.generate_content(full_prompt)
+        response = llm.generate_content(full_prompt, request_options={"timeout": 45})
         
         # 응답 파싱
         answer = _parse_llm_response(response.text)

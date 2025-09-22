@@ -1,5 +1,5 @@
 # Docker helpers
-.PHONY: d.build d.up d.upd d.logs d.down ingest eval
+.PHONY: d.build d.up d.upd d.logs d.down ingest eval ui
 
 d.build:
 	docker compose build
@@ -17,6 +17,9 @@ d.down:
 	docker compose down
 ingest:
 	docker compose exec -T api bash scripts/rebuild_vector.sh
-	
+
 eval:
 	docker compose exec -T api python eval/ragas_pipeline.py
+
+ui:
+	docker compose exec api streamlit run ui/app.py --server.port 8501 --server.address 0.0.0.0

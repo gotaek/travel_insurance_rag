@@ -20,3 +20,22 @@ services:
     restart: unless-stopped
     environment:
       - PYTHONPATH=/app
+
+  ui:
+    build:
+      context: .
+    container_name: insurance-rag-ui
+    ports:
+      - "8501:8501"
+    depends_on:
+      - api
+    volumes:
+      - ./:/app
+    command: >
+      streamlit run ui/app.py
+      --server.port 8501
+      --server.address 0.0.0.0
+    environment:
+      - API_BASE_URL=http://api:8000
+      - PYTHONPATH=/app
+    restart: unless-stopped

@@ -34,3 +34,6 @@ faiss-cpu
 numpy
 tqdm
 scikit-learn
+
+streamlit
+requests
