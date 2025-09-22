@@ -2,7 +2,7 @@ from typing import TypedDict, List, Dict, Any
 
 class RAGState(TypedDict, total=False):
     question: str
-    intent: str            # "summary" | "compare" | "qa" | "recommend"
+    intent: str
     needs_web: bool
     plan: List[str]
     passages: List[Dict[str, Any]]
@@ -11,3 +11,4 @@ class RAGState(TypedDict, total=False):
     citations: List[Dict[str, Any]]
     warnings: List[str]
     trace: List[Dict[str, Any]]
+    web_results: List[Dict[str, Any]]   
