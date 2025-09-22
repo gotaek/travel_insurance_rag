@@ -1,0 +1,4 @@
+{"id":"q1","question":"비행기 연착 시 보장 알려줘","intent":"qa","gold_doc_ids":["sample_db"]}
+{"id":"q2","question":"DB손보 여행자보험 약관 요약","intent":"summary","gold_doc_ids":["sample_db"]}
+{"id":"q3","question":"DB손보와 카카오페이 여행자보험 차이 비교","intent":"compare","gold_doc_ids":["sample_db","sample2"]}
+{"id":"q4","question":"2025-09-30~10-02 LA 여행 특약 추천","intent":"recommend","gold_doc_ids":["sample_db"]}

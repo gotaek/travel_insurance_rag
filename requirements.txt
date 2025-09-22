@@ -15,3 +15,7 @@ tqdm
 PyYAML
 
 google-generativeai
+
+pandas
+datasets
+ragas
