@@ -13,3 +13,5 @@ numpy
 tqdm
 
 PyYAML
+
+google-generativeai

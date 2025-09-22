@@ -1,5 +1,6 @@
 from typing import Dict, Any
-from collections import defaultdict
+from app.deps import get_llm
+from graph.prompts.utils import load_prompt
 
 def compare_node(state: Dict[str, Any]) -> Dict[str, Any]:
     refined = state.get("refined", [])
@@ -7,27 +8,23 @@ def compare_node(state: Dict[str, Any]) -> Dict[str, Any]:
     warnings = state.get("warnings", []) or []
     policy_disclaimer = state.get("policy_disclaimer")
 
-    # 간단 비교 스텁: insurer 별로 묶어서 항목 수만 보여줌
-    buckets = defaultdict(list)
-    for p in refined:
-        key = p.get("insurer") or "UNKNOWN_INSURER"
-        buckets[key].append(p)
+    passages_text = "\n".join([p.get("text","") for p in refined])
+    prompt = (
+        load_prompt("compare")
+        + f"\n\n질문: {state['question']}\n\n참고 문서:\n{passages_text}"
+    )
 
-    lines = []
-    for insurer, items in buckets.items():
-        lines.append(f"- {insurer}: {len(items)}개 항목")
+    try:
+        llm = get_llm()
+        resp = llm.generate_content(prompt)
+        comparison = (resp.text or "").strip()
+    except Exception as e:
+        comparison = f"(LLM 호출 실패: {e})"
 
-    if not lines:
-        lines = ["비교할 컨텍스트가 부족합니다. 서로 다른 보험사/상품의 문맥이 필요합니다."]
-
-    caveats = ["비교는 현재 스텁입니다. 실제 표/정렬/차이점 하이라이트는 이후 단계에서 구현됩니다."]
-    caveats += warnings
-    if policy_disclaimer:
-        caveats.append(policy_disclaimer)
-
+    caveats = warnings + ([policy_disclaimer] if policy_disclaimer else [])
     answer = {
-        "conclusion": "보험사별 주요 항목 수 비교(스텁)",
-        "evidence": lines[:5],
+        "conclusion": comparison[:150],
+        "evidence": [p.get("text") for p in refined[:2]],
         "caveats": caveats,
         "quotes": citations,
     }
