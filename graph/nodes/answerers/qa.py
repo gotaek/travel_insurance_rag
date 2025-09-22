@@ -2,11 +2,11 @@ from typing import Dict, Any
 
 def qa_node(state: Dict[str, Any]) -> Dict[str, Any]:
     q = state["question"]
-    passages = state.get("passages", [])
+    refined = state.get("refined", [])
     answer = {
         "conclusion": f"질문 확인: '{q}'",
-        "evidence": [p.get("text") for p in passages[:2]],  # 상위 2개 텍스트만 보여줌
-        "caveats": ["실제 요약/검증 단계 전. 검색된 raw chunk만 노출."],
-        "quotes": passages,
+        "evidence": [p.get("text") for p in refined[:2]],
+        "caveats": ["검색 결과를 단순 정제한 상태. 검증/요약 단계는 아직 미적용."],
+        "quotes": refined,
     }
     return {**state, "draft_answer": answer}
