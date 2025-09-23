@@ -5,7 +5,6 @@ from tqdm import tqdm
 import numpy as np
 
 import fitz  # PyMuPDF
-import pdfplumber
 
 try:
     import chromadb
@@ -91,32 +90,85 @@ def _keyword_tags(docs: List[str], topk: int = 8) -> List[List[str]]:
         tags.append(uniq[:topk])
     return tags
 
-def _extract_tables(pdf_path: Path) -> Dict[int, List[Dict[str, Any]]]:
+def _extract_tables_pymupdf(pdf_path: Path) -> Dict[int, List[Dict[str, Any]]]:
     """
-    페이지별 테이블(행 리스트) 추출.
-    - pdfplumber tables: 각 행을 리스트로 반환 → 헤더/셀 정리 후 JSON화
-    반환 구조: {page_index(1-base): [ { "rows": [[...],[...]], "bbox": (x0,y0,x1,y1) }, ... ]}
+    PyMuPDF를 사용한 테이블 추출 (간단한 형태)
+    - 테이블 형태의 텍스트를 감지하여 구조화
     """
     results: Dict[int, List[Dict[str, Any]]] = {}
     try:
-        with pdfplumber.open(str(pdf_path)) as pdf:
-            for i, page in enumerate(pdf.pages, start=1):
-                try:
-                    tables = page.extract_tables()
-                except Exception:
-                    tables = []
-                items = []
-                for tb in tables or []:
-                    rows = []
-                    for r in tb:
-                        rows.append([ (c or "").strip() for c in r ])
-                    if rows:
-                        items.append({"rows": rows})
-                if items:
-                    results[i] = items
-    except Exception:
-        pass
+        with fitz.open(str(pdf_path)) as doc:
+            for pno, page in enumerate(doc, start=1):
+                # 페이지의 텍스트를 블록 단위로 추출
+                blocks = page.get_text("dict").get("blocks", [])
+                tables = []
+                
+                for block in blocks:
+                    if "lines" not in block:
+                        continue
+                    
+                    # 블록의 텍스트 추출
+                    block_text = ""
+                    for line in block["lines"]:
+                        line_text = "".join([span.get("text", "") for span in line.get("spans", [])])
+                        block_text += line_text + "\n"
+                    
+                    # 테이블 패턴 감지 (간단한 휴리스틱)
+                    if _is_table_pattern(block_text):
+                        rows = _parse_table_text(block_text)
+                        if rows:
+                            tables.append({"rows": rows})
+                
+                if tables:
+                    results[pno] = tables
+    except Exception as e:
+        print(f"⚠️ 테이블 추출 중 오류: {e}")
+    
     return results
+
+def _is_table_pattern(text: str) -> bool:
+    """
+    텍스트가 테이블 패턴인지 판단
+    """
+    lines = [line.strip() for line in text.split('\n') if line.strip()]
+    if len(lines) < 2:
+        return False
+    
+    # 여러 구분자로 분리된 컬럼이 있는지 확인
+    separators = ['|', '\t', '  ', '    ']  # 파이프, 탭, 2개 이상 공백
+    
+    for sep in separators:
+        if sep in text:
+            # 구분자로 분리된 행이 2개 이상 있는지 확인
+            separated_lines = [line for line in lines if sep in line]
+            if len(separated_lines) >= 2:
+                return True
+    
+    return False
+
+def _parse_table_text(text: str) -> List[List[str]]:
+    """
+    테이블 형태의 텍스트를 행/열 구조로 파싱
+    """
+    lines = [line.strip() for line in text.split('\n') if line.strip()]
+    rows = []
+    
+    for line in lines:
+        # 가장 적절한 구분자 찾기
+        if '|' in line:
+            cells = [cell.strip() for cell in line.split('|')]
+        elif '\t' in line:
+            cells = [cell.strip() for cell in line.split('\t')]
+        else:
+            # 2개 이상의 공백으로 분리
+            cells = [cell.strip() for cell in re.split(r'\s{2,}', line)]
+        
+        # 빈 셀 제거하고 유효한 행만 추가
+        cells = [cell for cell in cells if cell]
+        if cells:
+            rows.append(cells)
+    
+    return rows
 
 def _blocks_from_pymupdf(pdf_path: Path) -> List[Dict[str, Any]]:
     """
@@ -171,19 +223,40 @@ def _label_sections(blocks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
 
 def _merge_tables(labeled_blocks: List[Dict[str, Any]], table_map: Dict[int, List[Dict[str, Any]]]) -> List[Dict[str, Any]]:
     """
-    pdfplumber에서 뽑은 테이블을 section_type='table' 로 삽입.
-    - 각 페이지 끝에 추가(간단). 고급 매칭(좌표 근접)은 후속 개선에서.
+    PyMuPDF로 추출한 테이블을 section_type='table' 로 삽입.
+    - 중복 방지를 위해 테이블이 있는 페이지는 일반 텍스트에서 테이블 패턴 제외
     """
     merged: List[Dict[str, Any]] = []
     by_page: Dict[int, List[Dict[str, Any]]] = {}
+    
+    # 페이지별로 블록 그룹화
     for b in labeled_blocks:
         by_page.setdefault(b["page"], []).append(b)
 
     for pno in sorted(by_page.keys()):
-        merged.extend(by_page[pno])
-        for tb in table_map.get(pno, []):
-            text_rows = [" | ".join(r) for r in tb["rows"]]
-            merged.append({**by_page[pno][0], "section_type": "table", "text": "\n".join(text_rows)})
+        page_blocks = by_page[pno]
+        
+        # 해당 페이지에 테이블이 있는지 확인
+        has_tables = pno in table_map and table_map[pno]
+        
+        if has_tables:
+            # 테이블이 있는 페이지는 테이블 패턴을 제외한 일반 텍스트만 추가
+            for block in page_blocks:
+                if not _is_table_pattern(block["text"]):
+                    merged.append(block)
+            
+            # 구조화된 테이블 추가
+            for tb in table_map[pno]:
+                text_rows = [" | ".join(r) for r in tb["rows"]]
+                merged.append({
+                    **page_blocks[0], 
+                    "section_type": "table", 
+                    "text": "\n".join(text_rows)
+                })
+        else:
+            # 테이블이 없는 페이지는 그대로 추가
+            merged.extend(page_blocks)
+    
     return merged
 
 def _build_index(chunks_meta: List[Dict[str, Any]]):
@@ -240,19 +313,84 @@ def _build_index(chunks_meta: List[Dict[str, Any]]):
         print("🔄 Generating embeddings with multilingual-e5-small-ko model...")
         embeddings = embed_texts(texts)
         
-        # 컬렉션에 문서와 임베딩 추가
-        collection.add(
-            documents=texts,
-            metadatas=metadatas,
-            ids=doc_ids,
-            embeddings=embeddings.tolist()
-        )
+        # 배치 단위로 컬렉션에 문서와 임베딩 추가 (Chroma DB 배치 크기 제한 대응)
+        BATCH_SIZE = 5000  # Chroma DB 최대 배치 크기보다 작게 설정
+        total_chunks = len(chunks_meta)
+        
+        print(f"🔄 배치 단위로 벡터 DB에 저장 중... (총 {total_chunks}개 청크)")
+        
+        for i in range(0, total_chunks, BATCH_SIZE):
+            end_idx = min(i + BATCH_SIZE, total_chunks)
+            batch_texts = texts[i:end_idx]
+            batch_metadatas = metadatas[i:end_idx]
+            batch_ids = doc_ids[i:end_idx]
+            batch_embeddings = embeddings[i:end_idx].tolist()
+            
+            print(f"  📦 배치 {i//BATCH_SIZE + 1}: {len(batch_texts)}개 청크 저장 중...")
+            
+            collection.add(
+                documents=batch_texts,
+                metadatas=batch_metadatas,
+                ids=batch_ids,
+                embeddings=batch_embeddings
+            )
         
         print(f"✅ Built Chroma DB index: {len(chunks_meta)} chunks → {OUT_DIR}/{COLLECTION_NAME}")
         
     except Exception as e:
         print(f"❌ Failed to build Chroma DB index: {e}")
         return
+
+def _remove_duplicate_chunks(chunks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """
+    중복된 청크 제거
+    """
+    seen_texts = set()
+    unique_chunks = []
+    duplicate_count = 0
+    
+    for chunk in chunks:
+        # 텍스트 정규화 (공백, 특수문자 정리)
+        normalized = re.sub(r'\s+', ' ', chunk["text"].strip())
+        
+        if normalized and normalized not in seen_texts:
+            seen_texts.add(normalized)
+            unique_chunks.append(chunk)
+        else:
+            duplicate_count += 1
+            if duplicate_count <= 5:  # 처음 5개만 로그 출력
+                print(f"⚠️ 중복 청크 제거: {chunk.get('doc_id', 'unknown')} - {normalized[:50]}...")
+    
+    if duplicate_count > 5:
+        print(f"⚠️ 총 {duplicate_count}개의 중복 청크가 제거되었습니다.")
+    
+    return unique_chunks
+
+def _filter_empty_chunks(chunks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """
+    빈 청크 및 너무 짧은 청크 필터링
+    """
+    filtered_chunks = []
+    empty_count = 0
+    
+    for chunk in chunks:
+        text = chunk.get("text", "").strip()
+        
+        # 빈 텍스트 또는 너무 짧은 텍스트 제거
+        if not text or len(text) < 10:
+            empty_count += 1
+            continue
+        
+        # 의미있는 텍스트만 포함 (숫자, 한글, 영문이 포함된 경우)
+        if re.search(r'[가-힣a-zA-Z0-9]', text):
+            filtered_chunks.append(chunk)
+        else:
+            empty_count += 1
+    
+    if empty_count > 0:
+        print(f"⚠️ {empty_count}개의 빈/무의미한 청크가 제거되었습니다.")
+    
+    return filtered_chunks
 
 def main():
     pdfs = sorted([p for p in Path(DOC_DIR).glob("*.pdf")])
@@ -261,12 +399,14 @@ def main():
         return
 
     all_sections: List[Dict[str, Any]] = []
-    for p in tqdm(pdfs, desc="Parsing PDFs (PyMuPDF+pdfplumber)"):
+    for p in tqdm(pdfs, desc="Parsing PDFs (PyMuPDF only)"):
         blocks = _blocks_from_pymupdf(p)
         labeled = _label_sections(blocks)
-        tables = _extract_tables(p)
+        tables = _extract_tables_pymupdf(p)  # pdfplumber 대신 PyMuPDF 사용
         merged = _merge_tables(labeled, tables)
         all_sections.extend(merged)
+
+    print(f"📄 총 {len(all_sections)}개의 섹션이 추출되었습니다.")
 
     # 섹션 텍스트 기반 키워드 태깅
     section_texts = [s["text"] for s in all_sections]
@@ -288,6 +428,14 @@ def main():
                 m["text"] = ch
                 m["chunk_no"] = i
                 chunks_meta.append(m)
+
+    print(f"🔧 총 {len(chunks_meta)}개의 청크가 생성되었습니다.")
+
+    # 중복 및 빈 청크 제거
+    chunks_meta = _remove_duplicate_chunks(chunks_meta)
+    chunks_meta = _filter_empty_chunks(chunks_meta)
+    
+    print(f"✅ 최종 {len(chunks_meta)}개의 청크가 벡터 DB에 저장됩니다.")
 
     _build_index(chunks_meta)
 
