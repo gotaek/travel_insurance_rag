@@ -37,3 +37,4 @@ scikit-learn
 
 streamlit
 requests
+tavily-python

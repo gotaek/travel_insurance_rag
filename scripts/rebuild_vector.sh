@@ -2,7 +2,7 @@
 set -e
 export DOCUMENT_DIR=${DOCUMENT_DIR:-data/documents}
 export VECTOR_DIR=${VECTOR_DIR:-data/vector_db}
-export EMB_MODEL_NAME=${EMB_MODEL_NAME:-bge-m3}
+export EMB_MODEL_NAME=${EMB_MODEL_NAME:-bge-m3-small}
 export EMB_BATCH=${EMB_BATCH:-32}
 export CHUNK_SIZE=${CHUNK_SIZE:-800
 }

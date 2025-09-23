@@ -4,6 +4,7 @@ import os
 
 router = APIRouter(tags=["health"])
 
+@router.get("/health")
 @router.get("/healthz")
 def healthz():
     s = get_settings()

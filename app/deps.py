@@ -13,6 +13,9 @@ class Settings(BaseSettings):
     # ✅ Gemini(.env) 필드
     GEMINI_API_KEY: str = ""
     GEMINI_MODEL: str = "gemini-1.5-flash"
+    
+    # ✅ Tavily API 설정
+    TAVILY_API_KEY: str = ""
 
     class Config:
         env_file = ".env"

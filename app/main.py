@@ -11,11 +11,8 @@ app.add_middleware(
 )
 
 app.include_router(health.router, prefix="")
+app.include_router(rag.router, prefix="")
 
 @app.get("/")
 def root():
     return {"service": "insurance-rag", "status": "ready"}
-
-
-app.include_router(health.router, prefix="")
-app.include_router(rag.router, prefix="")

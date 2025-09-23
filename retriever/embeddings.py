@@ -7,7 +7,7 @@ import numpy as np
 from FlagEmbedding import BGEM3FlagModel # m3용
 from FlagEmbedding import FlagModel       # generic wrapper (bge-small-ko등 일부)
 
-EMB_NAME = os.getenv("EMB_MODEL_NAME", "bge-m3-ko")
+EMB_NAME = os.getenv("EMB_MODEL_NAME", "BAAI/bge-small-ko-v1")
 EMB_BATCH = int(os.getenv("EMB_BATCH", "32"))
 
 @lru_cache()
@@ -17,7 +17,7 @@ def _load_model():
     if "m3" in name:
         model = BGEM3FlagModel('BAAI/bge-m3', use_fp16=True)
         return ("m3", model)
-    # ko 스몰/기타: HF 경로 그대로 전달
+    # bge-small-ko 및 기타 모델: generic FlagModel 사용
     return ("generic", FlagModel(EMB_NAME, use_fp16=True))
 
 def embed_texts(texts: List[str]) -> np.ndarray:
