@@ -38,3 +38,7 @@ scikit-learn
 streamlit
 requests
 tavily-python
+
+# Redis for session management and caching
+redis>=4.5.0
+hiredis>=2.0.0

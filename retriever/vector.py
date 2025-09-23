@@ -9,6 +9,7 @@ except Exception:
     chromadb = None
 
 from retriever.embeddings import embed_texts  # ✅ unify with ingest embedding
+from graph.cache_manager import cache_manager
 
 class VectorStore:
     """
@@ -43,9 +44,15 @@ class VectorStore:
         return self.collection is not None
 
     def search(self, query: str, k: int = 5) -> List[Dict[str, Any]]:
-        """쿼리에 대한 벡터 검색 수행 - multilingual-e5-small-ko 모델 사용"""
+        """쿼리에 대한 벡터 검색 수행 - multilingual-e5-small-ko 모델 사용 (캐싱 지원)"""
         if not self.is_ready():
             return []
+        
+        # 캐시에서 먼저 확인
+        cached_results = cache_manager.get_cached_search_results(query, "vector", k)
+        if cached_results is not None:
+            print(f"✅ 벡터 검색 캐시 히트: {query[:50]}...")
+            return cached_results
         
         try:
             # multilingual-e5-small-ko 모델을 사용하여 쿼리 임베딩 생성
@@ -69,8 +76,13 @@ class VectorStore:
                     item["score_vec"] = float(1.0 - distance)  # 거리를 유사도 점수로 변환
                     out.append(item)
             
+            # 결과 캐싱
+            cache_manager.cache_search_results(query, out, "vector", k)
+            print(f"✅ 벡터 검색 완료 및 캐싱: {len(out)}개 결과")
+            
             return out
-        except Exception:
+        except Exception as e:
+            print(f"⚠️ 벡터 검색 실패: {e}")
             return []
 
 def vector_search(query: str, db_path: str, collection_name: str = "insurance_docs", k: int = 5) -> List[Dict[str, Any]]:

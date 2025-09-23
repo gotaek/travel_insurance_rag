@@ -1,11 +1,14 @@
 import os
 from functools import lru_cache
-from typing import List
+from typing import List, Optional, Dict, Any
 import numpy as np
 
 # FlagEmbedding (BGE 계열)
 from FlagEmbedding import BGEM3FlagModel # m3용
 from FlagEmbedding import FlagModel       # generic wrapper
+
+# 캐싱 관리자
+from graph.cache_manager import cache_manager
 
 EMB_NAME = os.getenv("EMB_MODEL_NAME", "dragonkue/multilingual-e5-small-ko")
 EMB_BATCH = int(os.getenv("EMB_BATCH", "32"))
@@ -40,11 +43,68 @@ def _load_model():
         return ("generic", model)
 
 def embed_texts(texts: List[str]) -> np.ndarray:
+    """
+    텍스트 임베딩 생성 (캐싱 지원)
+    """
+    if not texts:
+        return np.array([])
+    
+    # 캐시에서 먼저 확인
+    cached_embeddings = cache_manager.get_cached_embeddings(texts)
+    if cached_embeddings is not None:
+        print(f"✅ 임베딩 캐시 히트: {len(texts)}개 텍스트")
+        return cached_embeddings
+    
+    # 캐시 미스 - 모델 로딩 및 임베딩 생성
+    print(f"🔄 임베딩 생성 중: {len(texts)}개 텍스트")
     kind, model = _load_model()
+    
     if kind == "m3":
         # returns {"dense_vecs": np.ndarray, ...}
         out = model.encode(texts, batch_size=EMB_BATCH)
-        return out["dense_vecs"].astype("float32")
-    # generic
-    vecs = model.encode(texts, batch_size=EMB_BATCH)
-    return np.array(vecs, dtype="float32").copy()
+        embeddings = out["dense_vecs"].astype("float32")
+    else:
+        # generic
+        vecs = model.encode(texts, batch_size=EMB_BATCH)
+        embeddings = np.array(vecs, dtype="float32").copy()
+    
+    # 결과 캐싱
+    cache_manager.cache_embeddings(texts, embeddings)
+    print(f"✅ 임베딩 생성 완료 및 캐싱: {embeddings.shape}")
+    
+    return embeddings
+
+
+def preload_embedding_model() -> bool:
+    """
+    서버 시작 시 임베딩 모델 사전 로딩
+    """
+    try:
+        print("🔄 임베딩 모델 사전 로딩 시작...")
+        _load_model()
+        print("✅ 임베딩 모델 사전 로딩 완료")
+        return True
+    except Exception as e:
+        print(f"❌ 임베딩 모델 사전 로딩 실패: {e}")
+        return False
+
+
+def get_embedding_model_info() -> Dict[str, Any]:
+    """
+    현재 로딩된 임베딩 모델 정보 반환
+    """
+    try:
+        kind, model = _load_model()
+        return {
+            "model_name": EMB_NAME,
+            "model_type": kind,
+            "batch_size": EMB_BATCH,
+            "status": "loaded"
+        }
+    except Exception as e:
+        return {
+            "model_name": EMB_NAME,
+            "model_type": "unknown",
+            "batch_size": EMB_BATCH,
+            "status": f"error: {e}"
+        }
