@@ -17,6 +17,8 @@ def recall_at_k(state: Dict[str, Any], gold_doc_ids: List[str], k: int = 5) -> f
     cand = cand[:k]
     cand_ids = set(_collect_doc_ids(cand))
     gold = set([str(x) for x in gold_doc_ids or []])
+    
+    
     if not gold:
         return 0.0
     hit = len(cand_ids.intersection(gold)) > 0

@@ -51,11 +51,22 @@ def run_one(graph, row: Dict[str, Any]) -> Dict[str, Any]:
 
 def main():
     # 질문 로드
-    rows = [json.loads(l) for l in DATA_PATH.read_text(encoding="utf-8").splitlines() if l.strip()]
+    rows = []
+    for line in DATA_PATH.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if line and not line.startswith('//'):  # 주석 제외
+            try:
+                rows.append(json.loads(line))
+            except json.JSONDecodeError as e:
+                print(f"⚠️ JSON 파싱 오류: {line} - {e}")
+                continue
+    
+    print(f"📊 로드된 평가 질문: {len(rows)}개")
     g = build_graph()
     results: List[Dict[str, Any]] = []
 
-    for r in rows:
+    for i, r in enumerate(rows, 1):
+        print(f"🔄 평가 진행: {i}/{len(rows)} - {r['question']}")
         results.append(run_one(g, r))
 
     # 테이블 저장
@@ -84,10 +95,18 @@ def main():
     with open(OUT_DIR / "raw.json", "w", encoding="utf-8") as f:
         json.dump(results, f, ensure_ascii=False, indent=2)
 
-    print("✅ Saved:", OUT_DIR / "metrics.csv")
+    # 결과 요약 출력
+    print("\n📈 평가 결과 요약:")
+    print(f"  - 총 질문 수: {len(results)}")
+    print(f"  - 평균 Recall@5: {df['recall_at_5'].mean():.3f}")
+    print(f"  - 평균 Faithfulness: {df['faithfulness_simple'].mean():.3f}")
+    print(f"  - Intent 분포: {df['intent'].value_counts().to_dict()}")
+    
+    print("\n✅ 저장된 파일:")
+    print("  -", OUT_DIR / "metrics.csv")
     if _USE_RAGAS:
-        print("✅ Saved:", OUT_DIR / "ragas.csv")
-    print("✅ Saved:", OUT_DIR / "raw.json")
+        print("  -", OUT_DIR / "ragas.csv")
+    print("  -", OUT_DIR / "raw.json")
 
 if __name__ == "__main__":
     main()

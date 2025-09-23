@@ -21,5 +21,11 @@ ingest:
 eval:
 	docker compose exec -T api python eval/ragas_pipeline.py
 
+eval.analysis:
+	docker compose exec -T api python eval/analysis_report.py
+
+eval.simple:
+	docker compose exec -T api python eval/simple_test.py
+
 ui:
 	docker compose exec api streamlit run ui/app.py --server.port 8501 --server.address 0.0.0.0
