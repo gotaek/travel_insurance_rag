@@ -1,4 +1,4 @@
-import os, re, pickle, json
+import os, re, json
 from pathlib import Path
 from typing import List, Dict, Any, Tuple
 from tqdm import tqdm
@@ -8,9 +8,10 @@ import fitz  # PyMuPDF
 import pdfplumber
 
 try:
-    import faiss
+    import chromadb
+    from chromadb.config import Settings
 except Exception:
-    faiss = None
+    chromadb = None
 
 from sklearn.feature_extraction.text import TfidfVectorizer
 from retriever.embeddings import embed_texts
@@ -20,8 +21,7 @@ OUT_DIR = os.getenv("VECTOR_DIR", "data/vector_db")
 CHUNK_SIZE = int(os.getenv("CHUNK_SIZE", "800"))
 CHUNK_OVERLAP = int(os.getenv("CHUNK_OVERLAP", "120"))
 
-INDEX_PATH = Path(OUT_DIR) / "index.faiss"
-META_PATH = Path(OUT_DIR) / "index.pkl"
+COLLECTION_NAME = "insurance_docs"
 
 # ex) 2025_DB손보_여행자보험약관.pdf
 FNAME_RE = re.compile(r"(?P<year>\d{4})[_-](?P<insurer>[^_-]+)[_-](?P<title>.+)\.pdf$", re.IGNORECASE)
@@ -187,22 +187,72 @@ def _merge_tables(labeled_blocks: List[Dict[str, Any]], table_map: Dict[int, Lis
     return merged
 
 def _build_index(chunks_meta: List[Dict[str, Any]]):
+    """Chroma DB에 벡터 인덱스 구축 - multilingual-e5-small-ko 모델 사용"""
     os.makedirs(OUT_DIR, exist_ok=True)
     texts = [c["text"] for c in chunks_meta]
     if not texts:
         print("⚠️ No text chunks parsed. Abort.")
         return
-    vecs = embed_texts(texts)  # (N, D) float32
-    dim = vecs.shape[1]
-    if faiss is None:
-        print("⚠️ faiss not available. Skipping index build.")
+    
+    if chromadb is None:
+        print("⚠️ chromadb not available. Skipping index build.")
         return
-    index = faiss.IndexFlatL2(dim)
-    index.add(vecs)
-    faiss.write_index(index, str(INDEX_PATH))
-    with open(META_PATH, "wb") as f:
-        pickle.dump(chunks_meta, f)
-    print(f"✅ Built FAISS index: {len(chunks_meta)} chunks → {INDEX_PATH}")
+    
+    try:
+        # Chroma DB 클라이언트 초기화
+        client = chromadb.PersistentClient(
+            path=OUT_DIR,
+            settings=Settings(anonymized_telemetry=False)
+        )
+        
+        # 기존 컬렉션 확인 및 처리
+        collection = None
+        try:
+            # 기존 컬렉션이 있는지 확인
+            collection = client.get_collection(COLLECTION_NAME)
+            print(f"📋 Found existing collection: {COLLECTION_NAME}")
+            # 기존 컬렉션 삭제
+            client.delete_collection(COLLECTION_NAME)
+            print(f"🗑️ Deleted existing collection: {COLLECTION_NAME}")
+        except Exception:
+            print(f"📋 No existing collection found: {COLLECTION_NAME}")
+        
+        # 새 컬렉션 생성
+        collection = client.create_collection(
+            name=COLLECTION_NAME,
+            metadata={"description": "여행자보험 문서 벡터 데이터베이스"}
+        )
+        print(f"✨ Created new collection: {COLLECTION_NAME}")
+        
+        # 문서 ID 생성 및 메타데이터 준비
+        doc_ids = [f"doc_{i}" for i in range(len(chunks_meta))]
+        metadatas = []
+        
+        for chunk in chunks_meta:
+            # Chroma DB 메타데이터는 문자열 값만 허용
+            metadata = {}
+            for key, value in chunk.items():
+                if key != "text" and isinstance(value, (str, int, float, bool)):
+                    metadata[key] = str(value)
+            metadatas.append(metadata)
+        
+        # multilingual-e5-small-ko 모델을 사용하여 임베딩 생성
+        print("🔄 Generating embeddings with multilingual-e5-small-ko model...")
+        embeddings = embed_texts(texts)
+        
+        # 컬렉션에 문서와 임베딩 추가
+        collection.add(
+            documents=texts,
+            metadatas=metadatas,
+            ids=doc_ids,
+            embeddings=embeddings.tolist()
+        )
+        
+        print(f"✅ Built Chroma DB index: {len(chunks_meta)} chunks → {OUT_DIR}/{COLLECTION_NAME}")
+        
+    except Exception as e:
+        print(f"❌ Failed to build Chroma DB index: {e}")
+        return
 
 def main():
     pdfs = sorted([p for p in Path(DOC_DIR).glob("*.pdf")])

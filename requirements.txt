@@ -6,7 +6,7 @@ python-dotenv
 langgraph>=0.0.50
 langchain-core>=0.2.0
 
-faiss-cpu
+chromadb
 rank_bm25
 numpy
 
@@ -30,7 +30,7 @@ pandas
 # embeddings / vector
 FlagEmbedding
 torch
-faiss-cpu
+chromadb
 numpy
 tqdm
 scikit-learn

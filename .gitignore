@@ -70,9 +70,14 @@ Thumbs.db
 ehthumbs.db
 
 # Vector database files (auto-generated)
+# FAISS files
 data/vector_db/*.faiss
 data/vector_db/*.pkl
 data/vector_db/*.index
+
+# Chroma DB files
+data/vector_db/
+!data/vector_db/.gitkeep
 
 # Environment files
 .env

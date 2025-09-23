@@ -34,17 +34,16 @@ INSURANCE_RAG/
 │     ├─ recommend.md           # 추천 전용 지침: 위험도, 가정, 최신성 주석, 불확실성 표기
 │     └─ qa.md                  # QA 전용 지침: 단계/체크리스트/필수 서류 템플릿
 │
-├─ retriever/                   # 검색 계층: 백엔드 교체 가능(FAISS↔Chroma), 하이브리드 전략
+├─ retriever/                   # 검색 계층: Chroma DB 백엔드, 하이브리드 전략
 │  ├─ __init__.py               # 팩토리/인터페이스 export
-│  ├─ vector.py                 # 인덱스 로드/세이브, embed 함수 주입, top_k 검색, shard/partition 지원
+│  ├─ vector.py                 # Chroma DB 벡터 스토어, top_k 검색, 컬렉션 관리
 │  ├─ keyword.py                # BM25/TF-IDF 래퍼, 토큰화/불용어, 정규화 스코어 반환
 │  └─ hybrid.py                 # 벡터+키워드 머지: 스코어 min-max 정규화, 중복 문서 병합, 소스메타 유지
 │
 ├─ data/
 │  ├─ documents/                # PDF 원천: 파일명 규칙 insurer_product_version(pages).pdf 유지
-│  └─ vector_db/                # 벡터 DB (자동 생성, git 제외)
-│     ├─ index.faiss            # 벡터 인덱스 (make ingest로 재생성)
-│     └─ index.pkl              # 메타/ID 매핑 (make ingest로 재생성)
+│  └─ vector_db/                # Chroma DB (자동 생성, git 제외)
+│     └─ insurance_docs/        # Chroma DB 컬렉션 (make ingest로 재생성)
 │
 ├─ eval/                        # 오프라인 평가: 회귀 테스트와 지표 일괄 산출
 │  ├─ ragas_pipeline.py         # RAGAS 실행 파이프라인(questions.jsonl→scores.json)
@@ -55,7 +54,7 @@ INSURANCE_RAG/
 │  └─ app.py                    # Streamlit MVP: 질문→/rag/ask 호출, 4블록 렌더, trace 타임라인 시각화
 │
 ├─ scripts/
-│  ├─ ingest.py                 # 파서→청크→임베딩→FAISS 빌드; 증분 업데이트, 실패 재시도, 중복 방지
+│  ├─ ingest.py                 # 파서→청크→임베딩→Chroma DB 빌드; 증분 업데이트, 실패 재시도, 중복 방지
 │  ├─ rebuild_vector.sh         # 인덱스 재생성 셸: 환경변수 로드, 병렬처리 옵션, 산출물 검증 해시 출력
 │  └─ smoke_test.py             # 최소 동작 확인: 대표 질의 세트로 planner/answerer 라우팅 검증
 │

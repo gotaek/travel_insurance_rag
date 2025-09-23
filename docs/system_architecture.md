@@ -24,7 +24,7 @@ graph TB
     end
     
     subgraph "검색 엔진"
-        VECTOR[Vector Search<br/>FAISS + BGE-M3]
+        VECTOR[Vector Search<br/>FAISS + BGE-M3-SMALL]
         KEYWORD[Keyword Search<br/>BM25]
         HYBRID[Hybrid Search<br/>가중치 병합]
     end

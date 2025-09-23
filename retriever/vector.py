@@ -1,48 +1,79 @@
-import os, pickle
+import os
 from typing import List, Dict, Any
 import numpy as np
 
 try:
-    import faiss  # type: ignore
+    import chromadb
+    from chromadb.config import Settings
 except Exception:
-    faiss = None
+    chromadb = None
 
 from retriever.embeddings import embed_texts  # ✅ unify with ingest embedding
 
 class VectorStore:
     """
-    FAISS index + metadata loader with top-k search using the same embeddings as ingest.
-    Returns empty results safely if faiss or index files are unavailable.
+    Chroma DB 벡터 스토어 with multilingual-e5-small-ko 임베딩 모델
+    Returns empty results safely if chromadb or collection is unavailable.
     """
-    def __init__(self, index_path: str, meta_path: str):
-        self.index_path = index_path
-        self.meta_path = meta_path
-        self.index = None
-        self.meta: List[Dict[str, Any]] = []
+    def __init__(self, db_path: str, collection_name: str = "insurance_docs"):
+        self.db_path = db_path
+        self.collection_name = collection_name
+        self.client = None
+        self.collection = None
 
-        if faiss and os.path.exists(index_path) and os.path.exists(meta_path):
-            self.index = faiss.read_index(index_path)
-            with open(meta_path, "rb") as f:
-                self.meta = pickle.load(f)
+        if chromadb:
+            try:
+                # Chroma DB 클라이언트 초기화
+                self.client = chromadb.PersistentClient(
+                    path=db_path,
+                    settings=Settings(anonymized_telemetry=False)
+                )
+                # 컬렉션 가져오기 (존재하지 않으면 빈 결과 반환)
+                try:
+                    self.collection = self.client.get_collection(collection_name)
+                except Exception:
+                    # 컬렉션이 존재하지 않는 경우
+                    self.collection = None
+            except Exception:
+                self.client = None
+                self.collection = None
 
     def is_ready(self) -> bool:
-        return self.index is not None and len(self.meta) > 0
+        """Chroma DB가 준비되었는지 확인"""
+        return self.collection is not None
 
     def search(self, query: str, k: int = 5) -> List[Dict[str, Any]]:
+        """쿼리에 대한 벡터 검색 수행 - multilingual-e5-small-ko 모델 사용"""
         if not self.is_ready():
             return []
-        # ✅ use the same embedding dim as the index (BGE-ko via retriever.embeddings)
-        qv = embed_texts([query]).astype("float32")
-        D, I = self.index.search(qv, k)
-        out: List[Dict[str, Any]] = []
-        for score, idx in zip(D[0], I[0]):
-            if idx == -1:
-                continue
-            item = dict(self.meta[idx])
-            item["score_vec"] = float(score)
-            out.append(item)
-        return out
+        
+        try:
+            # multilingual-e5-small-ko 모델을 사용하여 쿼리 임베딩 생성
+            query_embedding = embed_texts([query])
+            
+            # Chroma DB에서 검색 수행 (e5 임베딩 기반)
+            results = self.collection.query(
+                query_embeddings=query_embedding.tolist(),
+                n_results=k
+            )
+            
+            out: List[Dict[str, Any]] = []
+            if results['documents'] and results['documents'][0]:
+                for i, (doc, metadata, distance) in enumerate(zip(
+                    results['documents'][0],
+                    results['metadatas'][0] if results['metadatas'] else [{}] * len(results['documents'][0]),
+                    results['distances'][0] if results['distances'] else [0.0] * len(results['documents'][0])
+                )):
+                    item = dict(metadata) if metadata else {}
+                    item["text"] = doc
+                    item["score_vec"] = float(1.0 - distance)  # 거리를 유사도 점수로 변환
+                    out.append(item)
+            
+            return out
+        except Exception:
+            return []
 
-def vector_search(query: str, index_path: str, meta_path: str, k: int = 5) -> List[Dict[str, Any]]:
-        store = VectorStore(index_path, meta_path)
-        return store.search(query, k=k)
+def vector_search(query: str, db_path: str, collection_name: str = "insurance_docs", k: int = 5) -> List[Dict[str, Any]]:
+    """벡터 검색 함수 - multilingual-e5-small-ko 모델 사용"""
+    store = VectorStore(db_path, collection_name)
+    return store.search(query, k=k)
