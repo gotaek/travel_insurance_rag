@@ -27,8 +27,15 @@ def _needs_web_edge(state: RAGState) -> str:
     return "websearch" if state.get("needs_web") else "search"
 
 def _quality_check_edge(state: RAGState) -> str:
-    """품질 평가 후 분기 결정"""
+    """품질 평가 후 분기 결정 (무한루프 방지 포함)"""
     needs_replan = state.get("needs_replan", False)
+    replan_count = state.get("replan_count", 0)
+    max_attempts = state.get("max_replan_attempts", 3)
+    
+    # 재검색 횟수가 최대 시도 횟수를 초과하면 강제 종료
+    if needs_replan and replan_count >= max_attempts:
+        return "final_answer"
+    
     return "replan" if needs_replan else "final_answer"
 
 def build_graph():
@@ -72,7 +79,7 @@ def build_graph():
     # 품질 평가 후 분기
     g.add_conditional_edges("reevaluate", _quality_check_edge, {"replan": "replan", "final_answer": END})
     
-    # 재검색 루프
-    g.add_conditional_edges("replan", _needs_web_edge, {"websearch": "websearch", "search": "search"})
+    # 재검색 루프 - replan에서 planner로 다시 돌아가서 새로운 질문 처리
+    g.add_edge("replan", "planner")
     
     return g.compile()

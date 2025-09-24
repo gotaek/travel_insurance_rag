@@ -5,8 +5,9 @@ from app.deps import get_llm
 
 def _load_prompt(prompt_name: str) -> str:
     """프롬프트 파일 로드"""
-    # 절대 경로 사용
-    prompt_path = Path("/app/graph/prompts") / f"{prompt_name}.md"
+    # 현재 작업 디렉토리 기준으로 경로 설정
+    current_dir = Path(__file__).parent.parent.parent
+    prompt_path = current_dir / "prompts" / f"{prompt_name}.md"
     return prompt_path.read_text(encoding="utf-8")
 
 def _format_context(passages: list) -> str:

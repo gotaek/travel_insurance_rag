@@ -4,12 +4,14 @@ from app.deps import get_llm
 
 def reevaluate_node(state: Dict[str, Any]) -> Dict[str, Any]:
     """
-    LLM 기반 답변 품질 평가 및 재검색 필요성 판단
+    LLM 기반 답변 품질 평가 및 재검색 필요성 판단 (무한루프 방지 포함)
     """
     question = state.get("question", "")
     answer = state.get("draft_answer", {})
     citations = state.get("citations", [])
     passages = state.get("refined", [])
+    replan_count = state.get("replan_count", 0)
+    max_attempts = state.get("max_replan_attempts", 3)
     
     # 답변 텍스트 추출
     answer_text = answer.get("text", "") if isinstance(answer, dict) else str(answer)
@@ -17,13 +19,16 @@ def reevaluate_node(state: Dict[str, Any]) -> Dict[str, Any]:
     # LLM을 사용한 품질 평가
     quality_result = _evaluate_answer_quality(question, answer_text, citations, passages)
     
+    # 재검색 횟수 체크
+    needs_replan = quality_result["needs_replan"] and replan_count < max_attempts
+    
     return {
         **state,
         "quality_score": quality_result["score"],
         "quality_feedback": quality_result["feedback"],
-        "needs_replan": quality_result["needs_replan"],
+        "needs_replan": needs_replan,
         "replan_query": quality_result["replan_query"],
-        "final_answer": answer if quality_result["score"] >= 0.7 else None
+        "final_answer": answer if quality_result["score"] >= 0.7 or replan_count >= max_attempts else None
     }
 
 def _evaluate_answer_quality(question: str, answer: str, citations: list, passages: list) -> Dict[str, Any]:

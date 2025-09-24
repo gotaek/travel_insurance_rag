@@ -4,11 +4,12 @@ from app.deps import get_llm
 
 def replan_node(state: Dict[str, Any]) -> Dict[str, Any]:
     """
-    재검색을 위한 새로운 질문 생성 및 웹 검색 필요성 판단
+    재검색을 위한 새로운 질문 생성 및 웹 검색 필요성 판단 (무한루프 방지 포함)
     """
     original_question = state.get("question", "")
     quality_feedback = state.get("quality_feedback", "")
     replan_query = state.get("replan_query", "")
+    replan_count = state.get("replan_count", 0)
     
     # LLM을 사용하여 재검색 질문 생성
     replan_result = _generate_replan_query(original_question, quality_feedback, replan_query)
@@ -17,6 +18,8 @@ def replan_node(state: Dict[str, Any]) -> Dict[str, Any]:
         **state,
         "question": replan_result["new_question"],
         "needs_web": replan_result["needs_web"],
+        "replan_count": replan_count + 1,  # 재검색 횟수 증가
+        "max_replan_attempts": 3,  # 최대 시도 횟수 설정
         "plan": ["replan", "websearch", "search", "rank_filter", "verify_refine", "answer:qa"]
     }
 

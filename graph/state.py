@@ -24,11 +24,15 @@ class RAGState(TypedDict, total=False):
     needs_replan: Annotated[bool, "재검색 필요 여부"]
     replan_query: Annotated[str, "재검색을 위한 새로운 질문"]
     
+    # 무한루프 방지
+    replan_count: Annotated[int, "재검색 횟수 (최대 3회)"]
+    max_replan_attempts: Annotated[int, "최대 재검색 시도 횟수"]
+    
     # 시스템 정보
     warnings: Annotated[List[str], "경고 메시지"]
     trace: Annotated[List[Dict[str, Any]], "실행 추적 정보"]
     
-    # 멀티턴 대화 컨텍스트 (새로 추가)
+    # 멀티턴 대화 컨텍스트 
     conversation_context: Annotated[Optional[ConversationContext], "대화 컨텍스트"]
     current_turn: Annotated[Optional[ConversationTurn], "현재 턴 정보"]
     session_id: Annotated[Optional[str], "세션 ID"]   
