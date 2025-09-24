@@ -15,3 +15,34 @@ web:
 answer:
   min_citations: 1
   min_context: 1
+
+# 의도별 요구사항 설정
+intent_requirements:
+  qa:
+    min_context: 1
+    min_citations: 1
+    min_insurers: 1
+  compare:
+    min_context: 3
+    min_citations: 3
+    min_insurers: 2
+  summary:
+    min_context: 2
+    min_citations: 2
+    min_insurers: 1
+  recommend:
+    min_context: 3
+    min_citations: 3
+    min_insurers: 2
+
+# 품질 기준 설정
+quality:
+  min_score: 0.3          # 최소 스코어 임계치
+  max_age_days: 365      # 최대 문서 나이 (일)
+  
+# 출처 신뢰도 가중치
+source_weights:
+  공식약관: 1.0
+  공지: 0.9
+  안내: 0.8
+  기타: 0.7

@@ -115,3 +115,18 @@ test-rank-filter-unit:
 test-rank-filter-integration:
 	@echo "🔗 Rank Filter 노드 통합 테스트 실행..."
 	docker compose exec api bash -c 'export PATH=$$PATH:/home/appuser/.local/bin && pytest tests/integration/test_rank_filter_integration.py -v'
+
+
+# Verify Refine 노드 전용 테스트
+.PHONY: test-verify-refine test-verify-refine-unit test-verify-refine-integration
+
+test-verify-refine:
+	@echo "🔍 Verify Refine 노드 전체 테스트 실행..."
+	docker compose exec api bash -c 'export PATH=$$PATH:/home/appuser/.local/bin && pytest tests/unit/test_verify_refine.py tests/integration/test_verify_refine_integration.py -v'
+
+test-verify-refine-unit:
+	@echo "🔬 Verify Refine 노드 단위 테스트 실행..."
+	docker compose exec api bash -c 'export PATH=$$PATH:/home/appuser/.local/bin && pytest tests/unit/test_verify_refine.py -v'
+test-verify-refine-integration:
+	@echo "🔗 Verify Refine 노드 통합 테스트 실행..."
+	docker compose exec api bash -c 'export PATH=$$PATH:/home/appuser/.local/bin && pytest tests/integration/test_verify_refine_integration.py -v'
