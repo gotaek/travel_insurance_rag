@@ -200,8 +200,8 @@ class TestWebsearchIntegration:
         # 캐시된 결과와 동일한지 확인
         assert result1["web_results"] == result2["web_results"]
         
-        # 두 번째 호출에서는 Tavily API가 호출되지 않아야 함 (첫 번째 호출에서 3개 쿼리로 3번 호출)
-        assert mock_client_instance.search.call_count == 3
+        # 두 번째 호출에서는 Tavily API가 호출되지 않아야 함 (첫 번째 호출에서 4개 쿼리로 4번 호출)
+        assert mock_client_instance.search.call_count == 4
     
     @patch('graph.nodes.websearch.get_redis_client')
     @patch('graph.nodes.websearch.get_settings')
