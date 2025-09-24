@@ -99,3 +99,19 @@ test-search-unit:
 test-search-integration:
 	@echo "🔗 Search 노드 통합 테스트 실행..."
 	docker compose exec api bash -c 'export PATH=$$PATH:/home/appuser/.local/bin && pytest tests/integration/test_search_integration.py -v'
+
+
+# Rank Filter 노드 전용 테스트
+.PHONY: test-rank-filter test-rank-filter-unit test-rank-filter-integration
+
+test-rank-filter:
+	@echo "🔍 Rank Filter 노드 전체 테스트 실행..."
+	docker compose exec api bash -c 'export PATH=$$PATH:/home/appuser/.local/bin && pytest tests/unit/test_rank_filter.py tests/integration/test_rank_filter_integration.py -v'
+
+test-rank-filter-unit:
+	@echo "🔬 Rank Filter 노드 단위 테스트 실행..."
+	docker compose exec api bash -c 'export PATH=$$PATH:/home/appuser/.local/bin && pytest tests/unit/test_rank_filter.py -v'
+
+test-rank-filter-integration:
+	@echo "🔗 Rank Filter 노드 통합 테스트 실행..."
+	docker compose exec api bash -c 'export PATH=$$PATH:/home/appuser/.local/bin && pytest tests/integration/test_rank_filter_integration.py -v'

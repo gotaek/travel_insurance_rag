@@ -56,16 +56,19 @@ def search_node(state: Dict[str, Any]) -> Dict[str, Any]:
         "candidates_count": 0,
         "used_query": enhanced_query,
         "web_keywords": _extract_keywords_from_web_results(web_results)[:5],  # 상위 5개
-        "from_cache": False
+        "from_cache": False,
+        "rerank_candidates": True,  # 리랭크를 위한 대량 후보 제공
+        "vector_candidates": 0,
+        "keyword_candidates": 0
     }
 
     try:
-        # 벡터 검색 (Chroma DB 사용) - 더 많은 후보 검색
-        vec_k = min(k * 3, 50)  # 벡터 검색은 더 많은 후보 검색
+        # 벡터 검색 (Chroma DB 사용) - 리랭크를 위한 대량 후보 검색
+        vec_k = min(k * 20, 200)  # 벡터 검색: 20배 확장 (최대 200개)
         vec_results = vector_search(enhanced_query, db_path, collection_name, k=vec_k)
         
         # 전체 코퍼스에서 BM25 키워드 검색 (다양성 향상)
-        kw_k = min(k * 2, 30)  # 키워드 검색도 더 많은 후보 검색
+        kw_k = min(k * 15, 150)  # 키워드 검색: 15배 확장 (최대 150개)
         kw_results = keyword_search_full_corpus(enhanced_query, k=kw_k)
         
         # 벡터 검색 실패 시 키워드/웹만으로 진행
@@ -84,15 +87,18 @@ def search_node(state: Dict[str, Any]) -> Dict[str, Any]:
         web_passages = _convert_web_results_to_passages(web_results)
         
         # 향상된 하이브리드 검색 (웹 컨텍스트 가중치 반영)
+        # 리랭크를 위해 더 많은 후보를 rank_filter로 전달
         merged = _enhanced_hybrid_search_with_web_weight(
             enhanced_query, 
             vec_results, 
             kw_results, 
             web_passages,
-            k=k
+            k=k * 10  # rank_filter에서 리랭크할 수 있도록 10배 확장
         )
         
         search_meta["candidates_count"] = len(merged)
+        search_meta["vector_candidates"] = len(vec_results)
+        search_meta["keyword_candidates"] = len(kw_results)
         
         return {**state, "passages": merged, "search_meta": search_meta}
         
@@ -343,8 +349,8 @@ def _enhanced_hybrid_search_with_web_weight(
     Returns:
         웹 가중치가 반영된 통합 검색 결과
     """
-    # 기본 하이브리드 검색 수행
-    merged = hybrid_search(query, vector_results, keyword_results, k=k*2)  # 더 많은 후보
+    # 기본 하이브리드 검색 수행 - 리랭크를 위한 대량 후보
+    merged = hybrid_search(query, vector_results, keyword_results, k=k*3)  # 더 많은 후보 확보
     
     # 웹 패시지 추가
     all_results = merged + web_passages

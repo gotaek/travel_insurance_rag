@@ -10,11 +10,14 @@
     
     WORKDIR ${APP_HOME}
     
-    # healthcheck용 curl 설치
+    # healthcheck용 curl 설치 및 Cross-encoder 의존성
     RUN apt-get update && apt-get install -y --no-install-recommends \
         build-essential gcc g++ make \
         zlib1g-dev libjpeg62-turbo-dev libopenjp2-7-dev libpng-dev \
         libmagic1 ghostscript \
+        git \
+        wget \
+        curl \
     && rm -rf /var/lib/apt/lists/*
     
     # 의존성 먼저 복사/설치

@@ -21,7 +21,7 @@ datasets
 ragas
 
 # parsing
-pymupdf           # PyMuPDF 핵심
+pymupdf           
 python-magic
 pandas
 
@@ -32,6 +32,8 @@ chromadb
 numpy
 tqdm
 scikit-learn
+
+# Cross-encoder dependencies removed for simplified version
 
 streamlit
 requests
