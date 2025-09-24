@@ -54,3 +54,33 @@ test-coverage-docker:
 	@echo "📈 도커 환경에서 커버리지 포함 테스트 실행..."
 	docker compose exec api bash -c 'export PATH=$$PATH:/home/appuser/.local/bin && pytest tests/ --cov=graph --cov-report=term'
 
+# Planner 노드 전용 테스트
+.PHONY: test-planner test-planner-unit test-planner-integration
+
+test-planner:
+	@echo "📋 Planner 노드 전체 테스트 실행..."
+	docker compose exec api bash -c 'export PATH=$$PATH:/home/appuser/.local/bin && pytest tests/unit/test_planner_fallback.py tests/integration/test_planner_integration.py -v'
+
+test-planner-unit:
+	@echo "🔬 Planner 노드 단위 테스트 실행..."
+	docker compose exec api bash -c 'export PATH=$$PATH:/home/appuser/.local/bin && pytest tests/unit/test_planner_fallback.py -v'
+
+test-planner-integration:
+	@echo "🔗 Planner 노드 통합 테스트 실행..."
+	docker compose exec api bash -c 'export PATH=$$PATH:/home/appuser/.local/bin && pytest tests/integration/test_planner_integration.py -v'
+
+# Websearch 노드 전용 테스트
+.PHONY: test-websearch test-websearch-unit test-websearch-integration
+
+test-websearch:
+	@echo "🔍 Websearch 노드 전체 테스트 실행..."
+	docker compose exec api bash -c 'export PATH=$$PATH:/home/appuser/.local/bin && pytest tests/unit/test_websearch.py tests/integration/test_websearch_integration.py -v'
+
+test-websearch-unit:
+	@echo "🔬 Websearch 노드 단위 테스트 실행..."
+	docker compose exec api bash -c 'export PATH=$$PATH:/home/appuser/.local/bin && pytest tests/unit/test_websearch.py -v'
+
+test-websearch-integration:
+	@echo "🔗 Websearch 노드 통합 테스트 실행..."
+	docker compose exec api bash -c 'export PATH=$$PATH:/home/appuser/.local/bin && pytest tests/integration/test_websearch_integration.py -v'
+

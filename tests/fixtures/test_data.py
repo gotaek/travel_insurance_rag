@@ -88,3 +88,88 @@ def performance_benchmark_questions():
         "핵심 내용을 한눈에 보여주세요",
         "여러 보험 상품의 보장 내용을 비교해주세요"
     ] * 5  # 50개 질문
+
+
+@pytest.fixture
+def websearch_test_data():
+    """웹 검색 테스트용 데이터"""
+    return {
+        "mock_tavily_response": {
+            "results": [
+                {
+                    "url": "https://www.dbinsu.co.kr/travel-insurance",
+                    "title": "DB손해보험 여행자보험 보장내용",
+                    "content": "해외여행보험의 상세한 보장내용을 안내합니다. 의료비, 휴대품, 여행지연 등 다양한 위험을 보장합니다.",
+                    "score": 0.85
+                },
+                {
+                    "url": "https://www.kbinsure.co.kr/products/travel",
+                    "title": "KB손해보험 여행자보험 상품안내",
+                    "content": "KB손해보험의 여행자보험 상품에 대한 상세 정보를 제공합니다. 보험료, 가입조건, 보장내용을 확인하세요.",
+                    "score": 0.82
+                },
+                {
+                    "url": "https://www.naver.com/travel-insurance-guide",
+                    "title": "여행자보험 가이드 - 네이버",
+                    "content": "여행자보험 선택 가이드와 비교 정보를 제공합니다. 여행 목적에 맞는 보험을 선택하는 방법을 안내합니다.",
+                    "score": 0.75
+                }
+            ]
+        },
+        "domain_test_urls": {
+            "insurance_sites": [
+                "https://www.dbinsu.co.kr/travel-insurance",
+                "https://www.kbinsure.co.kr/products/travel",
+                "https://www.samsungfire.com/insurance/travel",
+                "https://www.hyundai.com/insurance/travel"
+            ],
+            "government_sites": [
+                "https://www.fss.or.kr/insurance/travel",
+                "https://www.kdi.re.kr/research/travel-insurance",
+                "https://www.korea.kr/policy/travel",
+                "https://www.visitkorea.or.kr/travel-info"
+            ],
+            "portal_sites": [
+                "https://www.naver.com/travel-insurance",
+                "https://www.daum.net/insurance/travel",
+                "https://www.kakao.com/insurance"
+            ],
+            "other_sites": [
+                "https://www.example.com/travel-insurance",
+                "https://www.unknown-site.com/insurance"
+            ]
+        },
+        "relevance_test_cases": [
+            {
+                "title": "여행자보험 보장내용 및 보험료 안내",
+                "content": "해외여행보험의 보장내용과 보험료에 대한 상세 정보를 제공합니다.",
+                "question": "여행자보험 보장내용이 뭐야?",
+                "expected_score_range": (0.7, 1.0)
+            },
+            {
+                "title": "일반 뉴스 기사",
+                "content": "오늘 날씨가 맑습니다. 경제 뉴스입니다.",
+                "question": "여행자보험 보장내용이 뭐야?",
+                "expected_score_range": (0.0, 0.3)
+            },
+            {
+                "title": "해외여행 가이드",
+                "content": "일본 여행을 위한 준비사항과 관광지 정보",
+                "question": "일본 여행 보험 추천",
+                "expected_score_range": (0.3, 0.7)
+            }
+        ]
+    }
+
+
+@pytest.fixture
+def websearch_edge_cases():
+    """웹 검색 엣지 케이스"""
+    return {
+        "empty_questions": ["", "   ", "\n", "\t"],
+        "very_long_questions": ["여행자보험" * 1000],
+        "special_characters": ["???", "!!!", "@@@", "###", "$$$"],
+        "numbers_only": ["123456789", "000000000"],
+        "mixed_languages": ["여행자보험 travel insurance", "보험 insurance 保険"],
+        "unicode_questions": ["여행자보험 🏖️ ✈️", "보험료 💰 💳"]
+    }
