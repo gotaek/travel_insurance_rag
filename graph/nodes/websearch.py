@@ -137,7 +137,7 @@ def _build_search_queries(state: Dict[str, Any]) -> List[str]:
             f"여행자보험 보험료 {question}"
         ])
     
-    return queries[:3]  # 최대 3개 쿼리만 사용
+    return queries[:4]  # 최대 4개 쿼리만 사용
 
 def _process_search_results(results: List[Dict], state: Dict[str, Any]) -> List[Dict[str, Any]]:
     """
@@ -209,7 +209,7 @@ def _calculate_relevance_score(title: str, content: str, question: str) -> float
     travel_keywords = [
         "여행", "해외여행", "국내여행", "여행지", "관광",
         "항공", "호텔", "여행사", "여행상품", "출국", "입국",
-        "이스라엘", "중동", "해외", "외국"
+        "해외", "외국"
     ]
     
     # 키워드 매칭 점수 계산
@@ -222,8 +222,6 @@ def _calculate_relevance_score(title: str, content: str, question: str) -> float
     
     # 특별 키워드 보너스
     special_bonus = 0
-    if "이스라엘" in text:
-        special_bonus += 0.2
     if "여행자보험" in text or "여행보험" in text:
         special_bonus += 0.3
     if "특별조항" in text or "특약" in text:
