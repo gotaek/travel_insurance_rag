@@ -8,11 +8,15 @@ Redis 기반 캐싱 관리자
 import json
 import pickle
 import hashlib
+import logging
 from typing import List, Dict, Any, Optional, Union
 from datetime import datetime, timedelta
 import numpy as np
 
 from app.deps import get_redis_client, get_settings
+
+# 로깅 설정
+logger = logging.getLogger(__name__)
 
 
 class CacheManager:
@@ -58,7 +62,7 @@ class CacheManager:
             self.redis_client.setex(cache_key, ttl, serialized_data)
             return True
         except Exception as e:
-            print(f"⚠️ 임베딩 캐싱 실패: {e}")
+            logger.error(f"임베딩 캐싱 실패: {e}")
             return False
     
     def get_cached_embeddings(self, texts: List[str]) -> Optional[np.ndarray]:
@@ -80,7 +84,7 @@ class CacheManager:
                 return embeddings
             return None
         except Exception as e:
-            print(f"⚠️ 임베딩 캐시 조회 실패: {e}")
+            logger.error(f"임베딩 캐시 조회 실패: {e}")
             return None
     
     def cache_search_results(
@@ -117,7 +121,7 @@ class CacheManager:
             self.redis_client.setex(cache_key, ttl, serialized_data)
             return True
         except Exception as e:
-            print(f"⚠️ 검색 결과 캐싱 실패: {e}")
+            logger.error(f"검색 결과 캐싱 실패: {e}")
             return False
     
     def get_cached_search_results(
@@ -144,7 +148,7 @@ class CacheManager:
                 return data["results"]
             return None
         except Exception as e:
-            print(f"⚠️ 검색 결과 캐시 조회 실패: {e}")
+            logger.error(f"검색 결과 캐시 조회 실패: {e}")
             return None
     
     def cache_llm_response(
@@ -171,7 +175,7 @@ class CacheManager:
             self.redis_client.setex(cache_key, ttl, serialized_data)
             return True
         except Exception as e:
-            print(f"⚠️ LLM 응답 캐싱 실패: {e}")
+            logger.error(f"LLM 응답 캐싱 실패: {e}")
             return False
     
     def get_cached_llm_response(self, prompt_hash: str) -> Optional[Dict[str, Any]]:
@@ -188,7 +192,7 @@ class CacheManager:
                 return data["response"]
             return None
         except Exception as e:
-            print(f"⚠️ LLM 응답 캐시 조회 실패: {e}")
+            logger.error(f"LLM 응답 캐시 조회 실패: {e}")
             return None
     
     def generate_prompt_hash(self, prompt: str, **kwargs) -> str:
@@ -207,7 +211,7 @@ class CacheManager:
                 return self.redis_client.delete(*keys)
             return 0
         except Exception as e:
-            print(f"⚠️ 캐시 무효화 실패: {e}")
+            logger.error(f"캐시 무효화 실패: {e}")
             return 0
     
     def get_cache_stats(self) -> Dict[str, Any]:

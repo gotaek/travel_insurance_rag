@@ -84,3 +84,18 @@ test-websearch-integration:
 	@echo "🔗 Websearch 노드 통합 테스트 실행..."
 	docker compose exec api bash -c 'export PATH=$$PATH:/home/appuser/.local/bin && pytest tests/integration/test_websearch_integration.py -v'
 
+
+# Search 노드 전용 테스트
+.PHONY: test-search test-search-unit test-search-integration
+
+test-search:
+	@echo "🔍 Search 노드 전체 테스트 실행..."
+	docker compose exec api bash -c 'export PATH=$$PATH:/home/appuser/.local/bin && pytest tests/unit/test_search.py tests/integration/test_search_integration.py -v'
+
+test-search-unit:
+	@echo "🔬 Search 노드 단위 테스트 실행..."
+	docker compose exec api bash -c 'export PATH=$$PATH:/home/appuser/.local/bin && pytest tests/unit/test_search.py -v'
+
+test-search-integration:
+	@echo "🔗 Search 노드 통합 테스트 실행..."
+	docker compose exec api bash -c 'export PATH=$$PATH:/home/appuser/.local/bin && pytest tests/integration/test_search_integration.py -v'

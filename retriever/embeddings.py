@@ -1,4 +1,5 @@
 import os
+import logging
 from functools import lru_cache
 from typing import List, Optional, Dict, Any
 import numpy as np
@@ -9,6 +10,9 @@ from FlagEmbedding import FlagModel       # generic wrapper
 
 # 캐싱 관리자
 from graph.cache_manager import cache_manager
+
+# 로깅 설정
+logger = logging.getLogger(__name__)
 
 EMB_NAME = os.getenv("EMB_MODEL_NAME", "dragonkue/multilingual-e5-small-ko")
 EMB_BATCH = int(os.getenv("EMB_BATCH", "32"))
@@ -21,9 +25,9 @@ def _load_model():
     hf_token = os.getenv("HUGGINGFACE_TOKEN")
     if hf_token:
         os.environ["HF_TOKEN"] = hf_token
-        print("🔑 Hugging Face 토큰이 설정되었습니다.")
+        logger.info("Hugging Face 토큰이 설정되었습니다.")
     
-    print(f"🔄 {EMB_NAME} 모델 로딩 중...")
+    logger.info(f"{EMB_NAME} 모델 로딩 중...")
     
     # multilingual-e5-small-ko 모델 사용
     if "e5" in name or "multilingual" in name:
@@ -52,11 +56,11 @@ def embed_texts(texts: List[str]) -> np.ndarray:
     # 캐시에서 먼저 확인
     cached_embeddings = cache_manager.get_cached_embeddings(texts)
     if cached_embeddings is not None:
-        print(f"✅ 임베딩 캐시 히트: {len(texts)}개 텍스트")
+        logger.debug(f"임베딩 캐시 히트: {len(texts)}개 텍스트")
         return cached_embeddings
     
     # 캐시 미스 - 모델 로딩 및 임베딩 생성
-    print(f"🔄 임베딩 생성 중: {len(texts)}개 텍스트")
+    logger.debug(f"임베딩 생성 중: {len(texts)}개 텍스트")
     kind, model = _load_model()
     
     if kind == "m3":
@@ -70,7 +74,7 @@ def embed_texts(texts: List[str]) -> np.ndarray:
     
     # 결과 캐싱
     cache_manager.cache_embeddings(texts, embeddings)
-    print(f"✅ 임베딩 생성 완료 및 캐싱: {embeddings.shape}")
+    logger.debug(f"임베딩 생성 완료 및 캐싱: {embeddings.shape}")
     
     return embeddings
 
@@ -80,12 +84,12 @@ def preload_embedding_model() -> bool:
     서버 시작 시 임베딩 모델 사전 로딩
     """
     try:
-        print("🔄 임베딩 모델 사전 로딩 시작...")
+        logger.info("임베딩 모델 사전 로딩 시작...")
         _load_model()
-        print("✅ 임베딩 모델 사전 로딩 완료")
+        logger.info("임베딩 모델 사전 로딩 완료")
         return True
     except Exception as e:
-        print(f"❌ 임베딩 모델 사전 로딩 실패: {e}")
+        logger.error(f"임베딩 모델 사전 로딩 실패: {e}")
         return False
 
 

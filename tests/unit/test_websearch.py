@@ -42,7 +42,7 @@ class TestWebsearchNode:
         
         queries = _build_search_queries(state)
         
-        assert len(queries) == 4
+        assert len(queries) == 3
         assert "여행자보험 보험료는 얼마인가요?" in queries
         assert "여행자보험 보장내용 보험료는 얼마인가요?" in queries
         assert "여행자보험 가입조건 보험료는 얼마인가요?" in queries
@@ -56,7 +56,7 @@ class TestWebsearchNode:
         
         queries = _build_search_queries(state)
         
-        assert len(queries) == 4
+        assert len(queries) == 3
         assert "여행자보험 DB손해보험과 KB손해보험 비교" in queries
         assert "여행자보험 비교 DB손해보험과 KB손해보험 비교" in queries
         assert "보험상품 비교 DB손해보험과 KB손해보험 비교" in queries
@@ -70,7 +70,7 @@ class TestWebsearchNode:
         
         queries = _build_search_queries(state)
         
-        assert len(queries) == 4
+        assert len(queries) == 3
         assert "여행자보험 일본 여행 추천" in queries
         assert "여행자보험 추천 일본 여행 추천" in queries
         assert "여행지별 보험 일본 여행 추천" in queries

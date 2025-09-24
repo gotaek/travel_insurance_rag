@@ -1,5 +1,6 @@
 import os
-from typing import List, Dict, Any
+import logging
+from typing import List, Dict, Any, Optional
 import numpy as np
 
 try:
@@ -10,6 +11,9 @@ except Exception:
 
 from retriever.embeddings import embed_texts  # ✅ unify with ingest embedding
 from graph.cache_manager import cache_manager
+
+# 로깅 설정
+logger = logging.getLogger(__name__)
 
 class VectorStore:
     """
@@ -51,7 +55,7 @@ class VectorStore:
         # 캐시에서 먼저 확인
         cached_results = cache_manager.get_cached_search_results(query, "vector", k)
         if cached_results is not None:
-            print(f"✅ 벡터 검색 캐시 히트: {query[:50]}...")
+            logger.debug(f"벡터 검색 캐시 히트: {query[:50]}...")
             return cached_results
         
         try:
@@ -78,14 +82,39 @@ class VectorStore:
             
             # 결과 캐싱
             cache_manager.cache_search_results(query, out, "vector", k)
-            print(f"✅ 벡터 검색 완료 및 캐싱: {len(out)}개 결과")
+            logger.debug(f"벡터 검색 완료 및 캐싱: {len(out)}개 결과")
             
             return out
         except Exception as e:
-            print(f"⚠️ 벡터 검색 실패: {e}")
+            logger.error(f"벡터 검색 실패: {e}")
             return []
 
+# 전역 VectorStore 인스턴스 (싱글톤)
+_vector_store_cache: Dict[str, VectorStore] = {}
+
 def vector_search(query: str, db_path: str, collection_name: str = "insurance_docs", k: int = 5) -> List[Dict[str, Any]]:
-    """벡터 검색 함수 - multilingual-e5-small-ko 모델 사용"""
-    store = VectorStore(db_path, collection_name)
+    """
+    벡터 검색 함수 - multilingual-e5-small-ko 모델 사용
+    VectorStore 인스턴스를 캐싱하여 성능 최적화
+    """
+    # 캐시 키 생성
+    cache_key = f"{db_path}:{collection_name}"
+    
+    # 캐시된 인스턴스가 없으면 새로 생성
+    if cache_key not in _vector_store_cache:
+        _vector_store_cache[cache_key] = VectorStore(db_path, collection_name)
+    
+    store = _vector_store_cache[cache_key]
     return store.search(query, k=k)
+
+def get_vector_store_info() -> Dict[str, Any]:
+    """VectorStore 캐시 정보 반환"""
+    return {
+        "cached_stores": len(_vector_store_cache),
+        "store_keys": list(_vector_store_cache.keys())
+    }
+
+def clear_vector_store_cache():
+    """VectorStore 캐시 초기화"""
+    global _vector_store_cache
+    _vector_store_cache.clear()

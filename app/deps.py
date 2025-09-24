@@ -1,8 +1,12 @@
 from functools import lru_cache
 from pydantic_settings import BaseSettings
 from typing import Optional
+import logging
 import google.generativeai as genai
 import redis
+
+# 로깅 설정
+logger = logging.getLogger(__name__)
 
 class Settings(BaseSettings):
     # 기존 필드
@@ -62,5 +66,5 @@ def get_redis_client():
         client.ping()
         return client
     except Exception as e:
-        print(f"⚠️ Redis 연결 실패: {e}")
+        logger.error(f"Redis 연결 실패: {e}")
         return None

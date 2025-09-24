@@ -137,7 +137,7 @@ def _build_search_queries(state: Dict[str, Any]) -> List[str]:
             f"여행자보험 보험료 {question}"
         ])
     
-    return queries[:4]  # 최대 4개 쿼리만 사용
+    return queries[:3]  # 최대 3개 쿼리만 사용
 
 def _process_search_results(results: List[Dict], state: Dict[str, Any]) -> List[Dict[str, Any]]:
     """
