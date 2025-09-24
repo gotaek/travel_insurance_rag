@@ -108,7 +108,7 @@ def recommend_node(state: Dict[str, Any]) -> Dict[str, Any]:
                 for p in passages[:3]  # 상위 3개만
             ]
         
-        return {**state, "draft_answer": answer}
+        return {**state, "draft_answer": answer, "final_answer": answer}
         
     except Exception as e:
         # LLM 호출 실패 시 fallback
@@ -118,4 +118,4 @@ def recommend_node(state: Dict[str, Any]) -> Dict[str, Any]:
             "caveats": ["추가 확인이 필요합니다.", f"오류: {str(e)}"],
             "quotes": []
         }
-        return {**state, "draft_answer": fallback_answer}
+        return {**state, "draft_answer": fallback_answer, "final_answer": fallback_answer}

@@ -16,6 +16,13 @@ class RAGState(TypedDict, total=False):
     # 답변 정보
     draft_answer: Annotated[Dict[str, Any], "초안 답변"]
     citations: Annotated[List[Dict[str, Any]], "인용 정보"]
+    final_answer: Annotated[Dict[str, Any], "최종 답변"]
+    
+    # 답변 품질 평가
+    quality_score: Annotated[float, "답변 품질 점수 (0-1)"]
+    quality_feedback: Annotated[str, "품질 평가 피드백"]
+    needs_replan: Annotated[bool, "재검색 필요 여부"]
+    replan_query: Annotated[str, "재검색을 위한 새로운 질문"]
     
     # 시스템 정보
     warnings: Annotated[List[str], "경고 메시지"]

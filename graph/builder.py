@@ -9,6 +9,8 @@ from graph.nodes.answerers.qa import qa_node
 from graph.nodes.answerers.summarize import summarize_node
 from graph.nodes.answerers.compare import compare_node
 from graph.nodes.answerers.recommend import recommend_node
+from graph.nodes.reevaluate import reevaluate_node
+from graph.nodes.replan import replan_node
 from graph.nodes.trace import wrap_with_trace
 
 def _decide_answer_node(state: RAGState) -> str:
@@ -24,6 +26,11 @@ def _decide_answer_node(state: RAGState) -> str:
 def _needs_web_edge(state: RAGState) -> str:
     return "websearch" if state.get("needs_web") else "search"
 
+def _quality_check_edge(state: RAGState) -> str:
+    """품질 평가 후 분기 결정"""
+    needs_replan = state.get("needs_replan", False)
+    return "replan" if needs_replan else "final_answer"
+
 def build_graph():
     g = StateGraph(RAGState)
 
@@ -37,6 +44,8 @@ def build_graph():
     g.add_node("answer_compare", wrap_with_trace(compare_node, "answer_compare"))
     g.add_node("answer_recommend", wrap_with_trace(recommend_node, "answer_recommend"))
     g.add_node("answer_qa", wrap_with_trace(qa_node, "answer_qa"))
+    g.add_node("reevaluate", wrap_with_trace(reevaluate_node, "reevaluate"))
+    g.add_node("replan", wrap_with_trace(replan_node, "replan"))
 
     g.set_entry_point("planner")
     g.add_conditional_edges("planner", _needs_web_edge, {"websearch": "websearch", "search": "search"})
@@ -53,8 +62,17 @@ def build_graph():
             "answer_qa": "answer_qa",
         },
     )
-    g.add_edge("answer_summary", END)
-    g.add_edge("answer_compare", END)
-    g.add_edge("answer_recommend", END)
-    g.add_edge("answer_qa", END)
+    
+    # 모든 답변 노드에서 reevaluate로 연결
+    g.add_edge("answer_summary", "reevaluate")
+    g.add_edge("answer_compare", "reevaluate")
+    g.add_edge("answer_recommend", "reevaluate")
+    g.add_edge("answer_qa", "reevaluate")
+    
+    # 품질 평가 후 분기
+    g.add_conditional_edges("reevaluate", _quality_check_edge, {"replan": "replan", "final_answer": END})
+    
+    # 재검색 루프
+    g.add_conditional_edges("replan", _needs_web_edge, {"websearch": "websearch", "search": "search"})
+    
     return g.compile()
