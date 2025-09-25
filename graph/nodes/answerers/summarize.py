@@ -2,6 +2,8 @@ from typing import Dict, Any
 import json
 from pathlib import Path
 from app.deps import get_llm
+from app.langsmith_llm import get_llm_with_tracing
+from graph.models import AnswerResponse
 
 def _load_prompt(prompt_name: str) -> str:
     """프롬프트 파일 로드"""
@@ -24,20 +26,21 @@ def _format_context(passages: list) -> str:
     
     return "\n".join(context_parts)
 
-def _parse_llm_response(response_text: str) -> Dict[str, Any]:
-    """LLM 응답을 JSON으로 파싱"""
+def _parse_llm_response_structured(llm, prompt: str) -> Dict[str, Any]:
+    """LLM 응답을 structured output으로 파싱"""
     try:
-        # JSON 부분만 추출 (```json ... ``` 형태일 수 있음)
-        if "```json" in response_text:
-            start = response_text.find("```json") + 7
-            end = response_text.find("```", start)
-            json_text = response_text[start:end].strip()
-        else:
-            json_text = response_text.strip()
+        # structured output 사용
+        structured_llm = llm.with_structured_output(AnswerResponse)
+        response = structured_llm.generate_content(prompt, request_options={"timeout": 45})
         
-        return json.loads(json_text)
-    except (json.JSONDecodeError, ValueError) as e:
-        # JSON 파싱 실패 시 기본 구조로 fallback
+        return {
+            "conclusion": response.conclusion,
+            "evidence": response.evidence,
+            "caveats": response.caveats,
+            "quotes": response.quotes
+        }
+    except Exception as e:
+        # structured output 실패 시 기본 구조로 fallback
         return {
             "conclusion": "답변을 생성하는 중 오류가 발생했습니다.",
             "evidence": ["응답 파싱 오류"],
@@ -71,16 +74,15 @@ def summarize_node(state: Dict[str, Any]) -> Dict[str, Any]:
 ## 참고 문서
 {context}
 
-위 문서를 참고하여 요약해주세요. 반드시 JSON 형식으로 답변하세요.
+위 문서를 참고하여 요약해주세요.
 """
     
     try:
         # LLM 호출
-        llm = get_llm()
-        response = llm.generate_content(full_prompt, request_options={"timeout": 45})
+        llm = get_llm_with_tracing()
         
-        # 응답 파싱
-        answer = _parse_llm_response(response.text)
+        # structured output 사용
+        answer = _parse_llm_response_structured(llm, full_prompt)
         
         # 출처 정보 추가
         if passages:

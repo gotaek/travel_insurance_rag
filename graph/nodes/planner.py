@@ -1,13 +1,19 @@
 from typing import Dict, Any
 import json
 import re
+import logging
 from app.deps import get_llm
+from app.langsmith_llm import get_llm_with_tracing
+from graph.models import PlannerResponse
+
+# 로깅 설정
+logger = logging.getLogger(__name__)
 
 INTENTS = ["summary", "compare", "qa", "recommend"]
 
 def _llm_classify_intent(question: str) -> Dict[str, Any]:
     """
-    LLM을 사용하여 질문의 intent와 needs_web을 분류
+    LLM을 사용하여 질문의 intent와 needs_web을 분류 (structured output 사용)
     """
     prompt = f"""
 다음 질문을 분석하여 여행자보험 RAG 시스템에서 적절한 처리 방식을 결정해주세요.
@@ -25,41 +31,37 @@ def _llm_classify_intent(question: str) -> Dict[str, Any]:
 - 특정 날짜나 지역의 현재 상황이 필요한가?
 - 여행지의 현재 안전 상황이나 규제가 필요한가?
 - 가격 비교가 필요한가?
-
-반드시 다음 JSON 형식으로만 답변하세요:
-{{
-    "intent": "qa|summary|compare|recommend",
-    "needs_web": true|false,
-    "reasoning": "분류 근거를 간단히 설명"
-}}
 """
 
     try:
-        llm = get_llm()
-        response = llm.generate_content(prompt, request_options={"timeout": 30})
+        logger.debug("LLM을 사용한 의도 분류 시작 (structured output)")
+        llm = get_llm_with_tracing()
         
-        # JSON 파싱
-        response_text = response.text.strip()
-        if "```json" in response_text:
-            start = response_text.find("```json") + 7
-            end = response_text.find("```", start)
-            json_text = response_text[start:end].strip()
-        else:
-            json_text = response_text
+        # structured output 사용
+        structured_llm = llm.with_structured_output(PlannerResponse)
+        response = structured_llm.generate_content(prompt, request_options={"timeout": 30})
         
-        result = json.loads(json_text)
+        logger.debug(f"Structured LLM 응답: {response}")
         
         # 유효성 검증
-        if result.get("intent") not in INTENTS:
-            result["intent"] = "qa"
-        if not isinstance(result.get("needs_web"), bool):
-            result["needs_web"] = False
+        intent = response.intent
+        if intent not in INTENTS:
+            logger.warning(f"유효하지 않은 의도: {intent}, 기본값 'qa' 사용")
+            intent = "qa"
             
-        return result
+        needs_web = response.needs_web
+        if not isinstance(needs_web, bool):
+            needs_web = _determine_web_search_need(question, intent)
+            logger.warning(f"유효하지 않은 needs_web: {needs_web}, 휴리스틱으로 재판단")
+            
+        return {
+            "intent": intent,
+            "needs_web": needs_web,
+            "reasoning": response.reasoning
+        }
         
     except Exception as e:
-        # LLM 호출 실패 시 fallback (디버깅 정보 포함)
-        print(f"⚠️ LLM 분류 실패, fallback 사용: {str(e)}")
+        logger.error(f"LLM 의도 분류 실패, fallback 사용: {str(e)}")
         return _fallback_classify(question)
 
 def _fallback_classify(question: str) -> Dict[str, Any]:
@@ -321,6 +323,11 @@ def planner_node(state: Dict[str, Any]) -> Dict[str, Any]:
     LLM 기반 질문 분석 및 분기 결정
     """
     q = state.get("question", "")
+    replan_count = state.get("replan_count", 0)
+    
+    # 재검색 횟수 로깅
+    if replan_count > 0:
+        logger.info(f"재검색으로 인한 planner 재실행 - 재검색 횟수: {replan_count}")
     
     # LLM을 사용한 분류
     classification = _llm_classify_intent(q)
@@ -339,5 +346,8 @@ def planner_node(state: Dict[str, Any]) -> Dict[str, Any]:
         "intent": intent, 
         "needs_web": needs_web, 
         "plan": plan,
-        "classification_reasoning": reasoning
+        "classification_reasoning": reasoning,
+        # replan_count는 명시적으로 유지 (초기화하지 않음)
+        "replan_count": replan_count,
+        "max_replan_attempts": state.get("max_replan_attempts", 3)
     }

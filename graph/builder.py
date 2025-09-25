@@ -12,6 +12,7 @@ from graph.nodes.answerers.recommend import recommend_node
 from graph.nodes.reevaluate import reevaluate_node
 from graph.nodes.replan import replan_node
 from graph.nodes.trace import wrap_with_trace
+from graph.langsmith_integration import get_langsmith_callbacks, is_langsmith_enabled
 
 def _decide_answer_node(state: RAGState) -> str:
     intent = state.get("intent", "qa")
@@ -32,13 +33,24 @@ def _quality_check_edge(state: RAGState) -> str:
     replan_count = state.get("replan_count", 0)
     max_attempts = state.get("max_replan_attempts", 3)
     
+    print(f"🔍 _quality_check_edge 호출 - needs_replan: {needs_replan}, replan_count: {replan_count}, max_attempts: {max_attempts}")
+    
     # 재검색 횟수가 최대 시도 횟수를 초과하면 강제 종료
-    if needs_replan and replan_count >= max_attempts:
+    if replan_count >= max_attempts:
+        print(f"🚨 최대 재검색 횟수({max_attempts}) 초과 - 강제 종료")
         return "final_answer"
     
-    return "replan" if needs_replan else "final_answer"
+    # needs_replan이 False이면 즉시 종료
+    if not needs_replan:
+        print(f"✅ needs_replan이 False - 답변 완료")
+        return "final_answer"
+    
+    # 재검색이 필요한 경우
+    print(f"🔄 재검색 필요 - 횟수: {replan_count}/{max_attempts}")
+    return "replan"
 
 def build_graph():
+    """LangGraph 빌드 함수 - LangSmith 추적 통합"""
     g = StateGraph(RAGState)
 
     # 모든 노드 trace 래핑
@@ -82,4 +94,19 @@ def build_graph():
     # 재검색 루프 - replan에서 planner로 다시 돌아가서 새로운 질문 처리
     g.add_edge("replan", "planner")
     
-    return g.compile()
+    # LangSmith 콜백 통합 (호환성 고려)
+    callbacks = get_langsmith_callbacks()
+    
+    if callbacks:
+        print(f"🔍 LangSmith 추적 활성화 - 콜백 수: {len(callbacks)}")
+        # LangGraph 버전에 따라 다른 방식으로 콜백 전달
+        try:
+            # 최신 버전 시도
+            return g.compile(callbacks=callbacks)
+        except TypeError:
+            # 구버전 호환성
+            print("⚠️ LangGraph 구버전 감지 - 콜백 없이 컴파일")
+            return g.compile()
+    else:
+        print("⚠️ LangSmith 추적 비활성화 - 콜백 없음")
+        return g.compile()

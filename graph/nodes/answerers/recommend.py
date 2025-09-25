@@ -2,6 +2,8 @@ from typing import Dict, Any
 import json
 from pathlib import Path
 from app.deps import get_llm
+from app.langsmith_llm import get_llm_with_tracing
+from graph.models import RecommendResponse
 
 def _load_prompt(prompt_name: str) -> str:
     """프롬프트 파일 로드"""
@@ -37,30 +39,23 @@ def _format_web_results(web_results: list) -> str:
     
     return "\n".join(web_parts)
 
-def _parse_llm_response(response_text: str) -> Dict[str, Any]:
-    """LLM 응답을 JSON으로 파싱"""
+def _parse_llm_response_structured(llm, prompt: str) -> Dict[str, Any]:
+    """LLM 응답을 structured output으로 파싱"""
     try:
-        # JSON 부분만 추출 (```json ... ``` 형태일 수 있음)
-        if "```json" in response_text:
-            start = response_text.find("```json") + 7
-            end = response_text.find("```", start)
-            json_text = response_text[start:end].strip()
-        else:
-            json_text = response_text.strip()
+        # structured output 사용
+        structured_llm = llm.with_structured_output(RecommendResponse)
+        response = structured_llm.generate_content(prompt, request_options={"timeout": 45})
         
-        parsed_response = json.loads(json_text)
-        
-        # 필수 필드 검증 및 기본값 설정
         return {
-            "conclusion": parsed_response.get("conclusion", "추천 정보를 생성했습니다."),
-            "evidence": parsed_response.get("evidence", []),
-            "caveats": parsed_response.get("caveats", []),
-            "quotes": parsed_response.get("quotes", []),
-            "recommendations": parsed_response.get("recommendations", []),
-            "web_info": parsed_response.get("web_info", {})
+            "conclusion": response.conclusion,
+            "evidence": response.evidence,
+            "caveats": response.caveats,
+            "quotes": response.quotes,
+            "recommendations": response.recommendations,
+            "web_info": response.web_info
         }
-    except (json.JSONDecodeError, ValueError) as e:
-        # JSON 파싱 실패 시 기본 구조로 fallback
+    except Exception as e:
+        # structured output 실패 시 기본 구조로 fallback
         return {
             "conclusion": "답변을 생성하는 중 오류가 발생했습니다.",
             "evidence": ["응답 파싱 오류"],
@@ -101,16 +96,15 @@ def recommend_node(state: Dict[str, Any]) -> Dict[str, Any]:
         ## 실시간 뉴스/정보
         {web_info}
 
-        위 정보를 참고하여 맞춤 추천을 해주세요. 반드시 JSON 형식으로 답변하세요.
+        위 정보를 참고하여 맞춤 추천을 해주세요.
         """
     
     try:
         # LLM 호출
-        llm = get_llm()
-        response = llm.generate_content(full_prompt, request_options={"timeout": 45})
+        llm = get_llm_with_tracing()
         
-        # 응답 파싱
-        answer = _parse_llm_response(response.text)
+        # structured output 사용
+        answer = _parse_llm_response_structured(llm, full_prompt)
         
         # 출처 정보 추가 (quotes가 비어있을 때만)
         if passages and not answer.get("quotes"):

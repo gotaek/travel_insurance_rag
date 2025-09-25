@@ -2,6 +2,8 @@ from typing import Dict, Any
 import json
 import logging
 from app.deps import get_llm
+from app.langsmith_llm import get_llm_with_tracing
+from graph.models import ReplanResponse
 
 # 로깅 설정
 logger = logging.getLogger(__name__)
@@ -14,10 +16,22 @@ def replan_node(state: Dict[str, Any]) -> Dict[str, Any]:
     quality_feedback = state.get("quality_feedback", "") or ""
     replan_query = state.get("replan_query", "") or ""
     replan_count = state.get("replan_count", 0) or 0
+    max_attempts = state.get("max_replan_attempts", 3)
     
-    logger.info(f"재검색 시작 - 원래 질문: {original_question[:50] if original_question else 'None'}..., 재검색 횟수: {replan_count}")
+    logger.info(f"재검색 시작 - 원래 질문: {original_question[:50] if original_question else 'None'}..., 재검색 횟수: {replan_count}/{max_attempts}")
     logger.debug(f"품질 피드백: {quality_feedback}")
     logger.debug(f"제안된 재검색 질문: {replan_query}")
+    
+    # 최대 시도 횟수 체크
+    if replan_count >= max_attempts:
+        logger.warning(f"🚨 최대 재검색 횟수({max_attempts})에 도달하여 재검색을 중단합니다.")
+        print(f"🚨 replan에서 강제 완료 - replan_count: {replan_count}, max_attempts: {max_attempts}")
+        return {
+            **state,
+            "replan_count": replan_count + 1,
+            "needs_replan": False,
+            "final_answer": state.get("draft_answer", {"conclusion": "재검색 횟수 초과로 답변을 완료합니다."})
+        }
     
     # LLM을 사용하여 재검색 질문 생성
     replan_result = _generate_replan_query(original_question, quality_feedback, replan_query)
@@ -30,8 +44,8 @@ def replan_node(state: Dict[str, Any]) -> Dict[str, Any]:
         "question": replan_result["new_question"],
         "needs_web": replan_result["needs_web"],
         "replan_count": replan_count + 1,  # 재검색 횟수 증가
-        "max_replan_attempts": 3,  # 최대 시도 횟수 설정
-        "plan": ["replan", "websearch", "search", "rank_filter", "verify_refine", "answer:qa"]
+        "max_replan_attempts": max_attempts,  # 기존 설정 유지
+        # plan은 planner가 다시 생성하도록 제거
     }
 
 def _generate_replan_query(original_question: str, feedback: str, suggested_query: str) -> Dict[str, Any]:
@@ -52,38 +66,29 @@ def _generate_replan_query(original_question: str, feedback: str, suggested_quer
 3. **범위**: 너무 넓지도 좁지도 않은 적절한 범위
 4. **웹 검색 필요성**: 실시간 정보나 최신 정보가 필요한지 판단
 
-반드시 다음 JSON 형식으로만 답변하세요:
-{{
-    "new_question": "개선된 검색 질문",
-    "needs_web": true|false,
-    "reasoning": "재검색 질문 개선 근거"
-}}
+다음 정보를 제공해주세요:
+- new_question: 개선된 검색 질문
+- needs_web: 웹 검색 필요 여부 (true/false)
+- reasoning: 재검색 질문 개선 근거
 """
 
     try:
-        logger.debug("LLM을 사용한 재검색 질문 생성 시작")
-        llm = get_llm()
-        response = llm.generate_content(prompt, request_options={"timeout": 30})
+        logger.debug("LLM을 사용한 재검색 질문 생성 시작 (structured output)")
+        llm = get_llm_with_tracing()
         
-        # JSON 파싱
-        response_text = response.text.strip()
-        if "```json" in response_text:
-            start = response_text.find("```json") + 7
-            end = response_text.find("```", start)
-            json_text = response_text[start:end].strip()
-        else:
-            json_text = response_text
+        # structured output 사용
+        structured_llm = llm.with_structured_output(ReplanResponse)
+        response = structured_llm.generate_content(prompt, request_options={"timeout": 30})
         
-        logger.debug(f"LLM 응답 파싱 완료: {json_text[:100]}...")
-        result = json.loads(json_text)
+        logger.debug(f"Structured LLM 응답: {response}")
         
         # 유효성 검증
-        new_question = result.get("new_question", original_question)
+        new_question = response.new_question
         if not new_question or new_question.strip() == "":
             logger.warning("빈 질문 생성됨, 원래 질문 사용")
             new_question = original_question
             
-        needs_web = result.get("needs_web", True)
+        needs_web = response.needs_web
         if not isinstance(needs_web, bool):
             logger.warning(f"유효하지 않은 needs_web 값: {needs_web}, 기본값 True 사용")
             needs_web = True
@@ -92,7 +97,7 @@ def _generate_replan_query(original_question: str, feedback: str, suggested_quer
         return {
             "new_question": new_question,
             "needs_web": needs_web,
-            "reasoning": result.get("reasoning", "재검색 질문 생성")
+            "reasoning": response.reasoning
         }
         
     except Exception as e:
