@@ -78,7 +78,7 @@ def _generate_replan_query(original_question: str, feedback: str, suggested_quer
         
         # structured output 사용
         structured_llm = llm.with_structured_output(ReplanResponse)
-        response = structured_llm.generate_content(prompt, request_options={"timeout": 30})
+        response = structured_llm.generate_content(prompt, request_options={"timeout": 10})
         
         logger.debug(f"Structured LLM 응답: {response}")
         

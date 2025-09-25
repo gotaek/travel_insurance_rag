@@ -285,7 +285,7 @@ def get_cache_stats():
     캐시 통계 조회
     """
     try:
-        return cache_manager.get_stats()
+        return cache_manager.get_cache_stats()
     except Exception as e:
         error_msg = f"캐시 통계 조회 중 오류: {str(e)}"
         logger.error(error_msg)

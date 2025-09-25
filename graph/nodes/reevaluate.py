@@ -36,8 +36,19 @@ def reevaluate_node(state: Dict[str, Any]) -> Dict[str, Any]:
     else:
         answer_text = str(answer)
     
-    # LLM을 사용한 품질 평가
-    logger.info(f"답변 품질 평가 시작 - 질문: {question[:50]}...")
+    # 성능 최적화: 3번째 사이클부터는 품질 평가 없이 바로 답변 제공
+    if replan_count >= 3:
+        logger.info(f"재검색 횟수가 {replan_count}회에 도달 - 품질 평가 없이 답변 완료")
+        return {
+            **state,
+            "needs_replan": False,
+            "final_answer": answer,
+            "quality_feedback": f"재검색 횟수({replan_count}회) 초과로 답변을 완료합니다.",
+            "replan_count": replan_count
+        }
+    
+    # LLM을 사용한 품질 평가 (3번째 사이클 이전에만)
+    logger.info(f"답변 품질 평가 시작 - 질문: {question[:50]}... (재검색 횟수: {replan_count})")
     logger.debug(f"추출된 답변 텍스트: {answer_text[:100]}..." if answer_text else "답변 텍스트가 비어있음")
     logger.debug(f"답변 원본 타입: {type(answer)}, 내용: {str(answer)[:100]}...")
     quality_result = _evaluate_answer_quality(question, answer_text, citations, passages)
@@ -45,7 +56,7 @@ def reevaluate_node(state: Dict[str, Any]) -> Dict[str, Any]:
     # 재검색 횟수 체크 및 무한루프 방지
     needs_replan = quality_result["needs_replan"] and replan_count < max_attempts
     
-    # 무한루프 방지: 최대 시도 횟수에 도달하면 강제로 답변 완료
+    # 무한루프 방지: 최대 시도 횟수에 도달하면 강제로 답변 완료 (3번째 사이클 이후)
     if replan_count >= max_attempts:
         needs_replan = False
         logger.warning(f"🚨 최대 재검색 횟수({max_attempts})에 도달하여 답변을 완료합니다.")
@@ -59,8 +70,8 @@ def reevaluate_node(state: Dict[str, Any]) -> Dict[str, Any]:
         if quality_result["score"] >= QUALITY_THRESHOLD:
             needs_replan = False
     
-    # 추가 안전장치: 재검색 횟수가 2회 이상이면 더 관대하게 평가
-    if replan_count >= 2 and answer_text and answer_text.strip():
+    # 추가 안전장치: 재검색 횟수가 2회 이상이면 더 관대하게 평가 (3번째 사이클 이전에만)
+    if replan_count >= 2 and replan_count < 3 and answer_text and answer_text.strip():
         logger.warning(f"재검색 횟수가 {replan_count}회로 높음 - 더 관대하게 평가")
         quality_result["score"] = max(quality_result["score"], 0.6)
         if quality_result["score"] >= QUALITY_THRESHOLD:
@@ -122,7 +133,7 @@ def _evaluate_answer_quality(question: str, answer: str, citations: List[Dict[st
         
         # structured output 사용
         structured_llm = llm.with_structured_output(QualityEvaluationResponse)
-        response = structured_llm.generate_content(prompt, request_options={"timeout": 30})
+        response = structured_llm.generate_content(prompt, request_options={"timeout": 10})
         
         logger.debug(f"Structured LLM 응답: {response}")
         

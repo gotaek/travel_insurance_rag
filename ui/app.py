@@ -14,6 +14,7 @@ from datetime import datetime
 from typing import Dict, List, Any, Optional
 import uuid
 import os
+import base64
 
 # 페이지 설정
 st.set_page_config(
@@ -25,6 +26,53 @@ st.set_page_config(
 
 # API 기본 설정 - Docker 환경 감지
 API_BASE_URL = os.getenv("API_BASE_URL", "http://localhost:8000")
+
+# CSS 제거 - Streamlit 기본 컴포넌트 사용
+
+def render_chat_message(message_type: str, content: str, 
+                       evidence: List[str] = None, caveats: List[str] = None, 
+                       quality_score: float = None, error: bool = False) -> None:
+    """기본 채팅 메시지 렌더링 (Streamlit 기본 컴포넌트 사용)"""
+    
+    # 메시지 타입에 따른 헤더 결정
+    if message_type == "user":
+        header = "👤 사용자"
+    else:  # assistant
+        header = "🤖 AI"
+    
+    # 컨테이너 생성
+    if message_type == "user":
+        with st.container():
+            st.markdown(f"**{header}**")
+            st.write(content)
+    else:  # assistant
+        if error:
+            st.error(f"**{header}**\n\n{content}")
+        else:
+            st.success(f"**{header}**\n\n{content}")
+    
+    # 증거 정보 표시
+    if evidence:
+        with st.expander("📋 증거"):
+            for i, ev in enumerate(evidence, 1):
+                st.write(f"{i}. {ev}")
+    
+    # 주의사항 표시
+    if caveats:
+        with st.expander("⚠️ 주의사항"):
+            for i, caveat in enumerate(caveats, 1):
+                st.write(f"{i}. {caveat}")
+    
+    # 품질 점수 표시
+    if quality_score is not None:
+        if quality_score >= 0.7:
+            st.success(f"품질 점수: {quality_score:.2f}")
+        elif quality_score >= 0.4:
+            st.warning(f"품질 점수: {quality_score:.2f}")
+        else:
+            st.error(f"품질 점수: {quality_score:.2f}")
+    
+    st.markdown("---")
 
 class RAGMonitor:
     """RAG 시스템 모니터링 클래스"""
@@ -335,59 +383,7 @@ def render_document_analysis(passages: List[Dict[str, Any]]) -> None:
                     disabled=True
                 )
 
-def render_conversation_history(monitor: RAGMonitor) -> None:
-    """대화 히스토리 표시"""
-    session_info = monitor.get_session_info()
     
-    if not session_info or 'recent_turns' not in session_info:
-        st.info("대화 히스토리가 없습니다.")
-        return
-    
-    st.subheader("💬 대화 히스토리")
-    
-    turns = session_info.get('recent_turns', [])
-    
-    for turn in reversed(turns):  # 최신부터 표시
-        with st.expander(f"질문: {turn.get('question', 'N/A')} ({turn.get('intent', 'unknown')})"):
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                st.write("**질문**:")
-                st.write(turn.get('question', 'N/A'))
-            
-            with col2:
-                st.write("**의도**:")
-                st.write(turn.get('intent', 'unknown'))
-            
-            # 답변 정보
-            result = turn.get('result', {})
-            answer = None
-            
-            # final_answer 또는 draft_answer에서 답변 찾기
-            if result.get('final_answer'):
-                answer = result['final_answer']
-            elif result.get('draft_answer'):
-                answer = result['draft_answer']
-            
-            if answer:
-                st.write("**답변**:")
-                st.write(answer.get('content', 'N/A'))
-                
-                # 품질 점수 표시
-                quality_score = result.get('quality_score', 0)
-                if quality_score > 0:
-                    st.write(f"**품질 점수**: {quality_score:.2f}")
-            else:
-                st.write("**답변**: N/A")
-            
-            # 사용된 문서 수
-            passages_used = result.get('passages', [])
-            st.write(f"**사용된 문서 수**: {len(passages_used)}")
-            
-            # 토큰 사용량
-            trace_data = result.get('trace', [])
-            total_tokens = sum(node.get('out_tokens_approx', 0) for node in trace_data)
-            st.write(f"**토큰 사용량**: {total_tokens}")
 
 def main():
     """메인 애플리케이션"""
@@ -442,101 +438,156 @@ def main():
             pass
     
     # 메인 컨텐츠
-    tab1, tab2, tab3, tab4 = st.tabs(["🔍 질문하기", "📊 파이프라인 모니터링", "📄 문서 분석", "💬 대화 히스토리"])
+    tab1, tab2, tab3 = st.tabs(["🔍 질문하기", "📊 파이프라인 모니터링", "📄 문서 분석"])
     
     with tab1:
-        st.header("질문하기")
         
-        # 질문 입력
-        question = st.text_area(
-            "여행자보험에 대해 질문해주세요:",
-            placeholder="예: 해외여행 보험료는 얼마인가요?",
-            height=100
-        )
-        
-        col1, col2 = st.columns([1, 4])
-        
-        with col1:
-            include_context = st.checkbox("대화 컨텍스트 포함", value=True)
-        
-        with col2:
-            if st.button("질문하기", type="primary"):
-                if question.strip():
-                    # 진행 상황 표시
-                    progress_bar = st.progress(0)
-                    status_text = st.empty()
+        # 기존 대화 히스토리 표시
+        if monitor.conversation_history:
+            for chat in monitor.conversation_history:
+                # 사용자 질문 표시
+                render_chat_message(
+                    message_type="user",
+                    content=chat['question']
+                )
+                
+                # AI 답변 표시
+                result = chat['result']
+                answer = None
+                if 'final_answer' in result and result['final_answer']:
+                    answer = result['final_answer']
+                elif 'draft_answer' in result and result['draft_answer']:
+                    answer = result['draft_answer']
+                
+                if answer:
+                    conclusion = answer.get('conclusion', answer.get('content', '답변을 생성할 수 없습니다.'))
+                    evidence = answer.get('evidence', [])
+                    caveats = answer.get('caveats', [])
+                    quality_score = result.get('quality_score', 0)
                     
-                    try:
-                        start_time = time.time()
-                        
-                        # 진행 상황 표시
-                        status_text.text("🔍 질문을 분석하고 있습니다...")
-                        progress_bar.progress(20)
-                        
-                        result = monitor.send_question(question, include_context)
-                        
-                        # 진행 상황 업데이트
-                        status_text.text("📊 파이프라인을 실행하고 있습니다...")
-                        progress_bar.progress(60)
-                        end_time = time.time()
-                        
-                        progress_bar.progress(100)
-                        status_text.text("✅ 답변 생성 완료!")
-                        
-                        if result:
-                            # 답변 표시
-                            st.success(f"답변 생성 완료! (소요시간: {end_time - start_time:.2f}초)")
-                            
-                            # 답변 내용
-                            answer = None
-                            if 'final_answer' in result and result['final_answer']:
-                                answer = result['final_answer']
-                                st.success("✅ 최종 답변 (품질 검증 완료)")
-                            elif 'draft_answer' in result and result['draft_answer']:
-                                answer = result['draft_answer']
-                                st.warning("⚠️ 초안 답변 (품질 검증 중)")
-                            
-                            if answer:
-                                st.subheader("답변")
-                                st.write(answer.get('content', '답변을 생성할 수 없습니다.'))
-                                
-                                # 품질 점수 표시
-                                quality_score = result.get('quality_score', 0)
-                                st.write(f"**품질 점수**: {quality_score:.2f}")
-                                
-                                # 인용 정보
-                                citations = answer.get('citations', [])
-                                if citations:
-                                    st.subheader("참조 문서")
-                                    for i, citation in enumerate(citations):
-                                        st.write(f"{i+1}. {citation.get('source', 'N/A')} (페이지 {citation.get('page', 'N/A')})")
-                            else:
-                                st.error("답변을 생성할 수 없습니다.")
-                            
-                            # 대화 히스토리에 추가
-                            monitor.conversation_history.append({
-                                'question': question,
-                                'result': result,
-                                'timestamp': datetime.now()
-                            })
-                            
-                            # 페이지 새로고침하여 모니터링 탭 업데이트
-                            st.rerun()
-                        else:
-                            st.error("답변 생성에 실패했습니다. API 서버 상태를 확인해주세요.")
-                            
-                    except Exception as e:
-                        st.error(f"오류가 발생했습니다: {str(e)}")
-                        st.info("💡 **해결 방법**:")
-                        st.write("1. 질문을 더 짧게 입력해보세요")
-                        st.write("2. API 서버가 정상적으로 실행 중인지 확인해주세요")
-                        st.write("3. 잠시 후 다시 시도해보세요")
-                        
-                        # 진행 상황 초기화
-                        progress_bar.progress(0)
-                        status_text.text("")
+                    render_chat_message(
+                        message_type="assistant",
+                        content=conclusion,
+                        evidence=evidence,
+                        caveats=caveats,
+                        quality_score=quality_score
+                    )
                 else:
-                    st.warning("질문을 입력해주세요.")
+                    render_chat_message(
+                        message_type="assistant",
+                        content="답변을 생성할 수 없습니다.",
+                        error=True
+                    )
+        
+        # 질문 입력 폼
+        st.markdown("---")
+        
+        with st.form("chat_form", clear_on_submit=True):
+            col1, col2 = st.columns([4, 1])
+            
+            with col1:
+                question = st.text_area(
+                    "여행자보험에 대해 질문해주세요:",
+                    placeholder="예: 해외여행 보험료는 얼마인가요?",
+                    height=80,
+                    key="question_input"
+                )
+            
+            with col2:
+                include_context = st.checkbox("대화 컨텍스트 포함", value=True, key="context_checkbox")
+                submit_button = st.form_submit_button("전송", type="primary")
+        
+        if submit_button and question.strip():
+            # 사용자 질문을 즉시 표시
+            render_chat_message(
+                message_type="user",
+                content=question
+            )
+            
+            # 진행 상황 표시
+            progress_bar = st.progress(0)
+            status_text = st.empty()
+            
+            try:
+                start_time = time.time()
+                
+                # 진행 상황 표시
+                status_text.text("🔍 질문을 분석하고 있습니다...")
+                progress_bar.progress(20)
+                
+                result = monitor.send_question(question, include_context)
+                
+                # 진행 상황 업데이트
+                status_text.text("📊 파이프라인을 실행하고 있습니다...")
+                progress_bar.progress(60)
+                end_time = time.time()
+                
+                progress_bar.progress(100)
+                status_text.text("✅ 답변 생성 완료!")
+                
+                if result:
+                    # 답변 내용
+                    answer = None
+                    if 'final_answer' in result and result['final_answer']:
+                        answer = result['final_answer']
+                    elif 'draft_answer' in result and result['draft_answer']:
+                        answer = result['draft_answer']
+                    
+                    if answer:
+                        conclusion = answer.get('conclusion', answer.get('content', '답변을 생성할 수 없습니다.'))
+                        evidence = answer.get('evidence', [])
+                        caveats = answer.get('caveats', [])
+                        quality_score = result.get('quality_score', 0)
+                        
+                        # AI 답변 표시
+                        render_chat_message(
+                            message_type="assistant",
+                            content=conclusion,
+                            evidence=evidence,
+                            caveats=caveats,
+                            quality_score=quality_score
+                        )
+                    else:
+                        render_chat_message(
+                            message_type="assistant",
+                            content="답변을 생성할 수 없습니다.",
+                            error=True
+                        )
+                    
+                    # 대화 히스토리에 추가
+                    monitor.conversation_history.append({
+                        'question': question,
+                        'result': result,
+                        'timestamp': datetime.now()
+                    })
+                    
+                    # 진행 상황 초기화
+                    progress_bar.progress(0)
+                    status_text.text("")
+                    
+                    # 페이지 새로고침하여 모니터링 탭 업데이트
+                    st.rerun()
+                else:
+                    render_chat_message(
+                        message_type="assistant",
+                        content="답변 생성에 실패했습니다. API 서버 상태를 확인해주세요.",
+                        error=True
+                    )
+                    
+            except Exception as e:
+                render_chat_message(
+                    message_type="assistant",
+                    content=f"오류가 발생했습니다: {str(e)}",
+                    error=True
+                )
+                
+                # 진행 상황 초기화
+                progress_bar.progress(0)
+                status_text.text("")
+        
+        elif submit_button and not question.strip():
+            st.warning("질문을 입력해주세요.")
+        
     
     with tab2:
         st.header("파이프라인 모니터링")
@@ -611,9 +662,6 @@ def main():
         else:
             st.info("질문을 먼저 해보세요.")
     
-    with tab4:
-        st.header("대화 히스토리")
-        render_conversation_history(monitor)
 
 if __name__ == "__main__":
     main()

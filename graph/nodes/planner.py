@@ -39,7 +39,7 @@ def _llm_classify_intent(question: str) -> Dict[str, Any]:
         
         # structured output 사용
         structured_llm = llm.with_structured_output(PlannerResponse)
-        response = structured_llm.generate_content(prompt, request_options={"timeout": 30})
+        response = structured_llm.generate_content(prompt, request_options={"timeout": 10})
         
         logger.debug(f"Structured LLM 응답: {response}")
         
@@ -318,9 +318,51 @@ def _determine_web_search_need(question: str, intent: str) -> bool:
     # 웹 검색 필요성 임계값 (5점 이상이면 웹 검색 필요)
     return web_score >= 5
 
+def _needs_llm_classification(question: str) -> bool:
+    """
+    복잡한 케이스인지 판단하여 LLM 분류가 필요한지 결정
+    """
+    # 복잡한 패턴들 (LLM이 더 정확할 수 있는 경우)
+    complex_patterns = [
+        # 모호한 질문
+        "어떤", "어느", "무엇", "뭐", "어떻게", "왜", "언제", "어디서",
+        # 복합 질문
+        "그리고", "또한", "또는", "그런데", "하지만", "그러나",
+        # 비교 관련
+        "차이", "다른", "비교", "대비", "vs", "대조",
+        # 추천 관련
+        "추천", "권장", "어떤 게", "어떤 것이", "선택",
+        # 요약 관련
+        "요약", "정리", "핵심", "주요", "개요"
+    ]
+    
+    # 복잡한 키워드가 2개 이상 있으면 LLM 사용
+    complex_count = sum(1 for pattern in complex_patterns if pattern in question)
+    return complex_count >= 2
+
+def _is_llm_result_better(fallback_result: Dict[str, Any], llm_result: Dict[str, Any]) -> bool:
+    """
+    LLM 결과가 fallback 결과보다 더 정확한지 판단
+    """
+    # LLM 결과가 더 구체적인 reasoning을 제공하면 우선
+    if len(llm_result.get("reasoning", "")) > len(fallback_result.get("reasoning", "")):
+        return True
+    
+    # LLM이 더 구체적인 intent를 제공하면 우선
+    llm_intent = llm_result.get("intent", "")
+    fallback_intent = fallback_result.get("intent", "")
+    
+    # 특정 intent에 대한 우선순위
+    intent_priority = {"recommend": 4, "compare": 3, "summary": 2, "qa": 1}
+    
+    llm_priority = intent_priority.get(llm_intent, 0)
+    fallback_priority = intent_priority.get(fallback_intent, 0)
+    
+    return llm_priority > fallback_priority
+
 def planner_node(state: Dict[str, Any]) -> Dict[str, Any]:
     """
-    LLM 기반 질문 분석 및 분기 결정
+    LLM 기반 질문 분석 및 분기 결정 (성능 최적화: fallback 우선 사용)
     """
     q = state.get("question", "")
     replan_count = state.get("replan_count", 0)
@@ -329,8 +371,21 @@ def planner_node(state: Dict[str, Any]) -> Dict[str, Any]:
     if replan_count > 0:
         logger.info(f"재검색으로 인한 planner 재실행 - 재검색 횟수: {replan_count}")
     
-    # LLM을 사용한 분류
-    classification = _llm_classify_intent(q)
+    # 성능 최적화: fallback 분류 우선 사용
+    logger.debug("빠른 fallback 분류 사용")
+    classification = _fallback_classify(q)
+    
+    # 복잡한 케이스에만 LLM 사용 (선택적)
+    if _needs_llm_classification(q):
+        logger.debug("복잡한 케이스로 LLM 분류 사용")
+        try:
+            llm_classification = _llm_classify_intent(q)
+            # LLM 결과가 더 정확하면 사용
+            if _is_llm_result_better(classification, llm_classification):
+                classification = llm_classification
+                logger.debug("LLM 분류 결과 사용")
+        except Exception as e:
+            logger.warning(f"LLM 분류 실패, fallback 결과 유지: {str(e)}")
     
     intent = classification["intent"]
     needs_web = classification["needs_web"]

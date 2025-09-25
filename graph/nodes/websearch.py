@@ -62,25 +62,30 @@ def websearch_node(state: Dict[str, Any]) -> Dict[str, Any]:
         # 도메인 특화 검색 쿼리 구성
         search_queries = _build_search_queries(state)
         
-        # 여러 쿼리로 검색 실행
+        # 성능 최적화: 단일 쿼리로 검색 (다중 쿼리 제거)
         all_results = []
-        for query in search_queries:
-            try:
-                # 도메인 필터 완화: include_domains 제거, exclude_domains만 유지
-                response = client.search(
-                    query=query,
-                    search_depth="basic",
-                    max_results=5,  # 쿼리당 5개씩 증가
-                    exclude_domains=EXCLUDED_DOMAINS
-                )
-                
-                # 결과 처리 및 품질 평가
-                processed_results = _process_search_results(response.get("results", []), state)
-                all_results.extend(processed_results)
-                
-            except Exception as e:
-                logger.warning(f"검색 쿼리 '{query}' 실행 중 오류: {str(e)}")
-                continue
+        try:
+            # 가장 관련성 높은 쿼리 하나만 사용
+            primary_query = search_queries[0] if search_queries else f"여행자보험 {state.get('question', '')}"
+            
+            logger.debug(f"웹 검색 쿼리: {primary_query}")
+            
+            # 단일 API 호출로 최적화
+            response = client.search(
+                query=primary_query,
+                search_depth="basic",
+                max_results=8,  # 결과 수 증가로 품질 향상
+                exclude_domains=EXCLUDED_DOMAINS
+            )
+            
+            # 결과 처리 및 품질 평가
+            processed_results = _process_search_results(response.get("results", []), state)
+            all_results.extend(processed_results)
+            
+        except Exception as e:
+            logger.warning(f"웹 검색 실행 중 오류: {str(e)}")
+            # 실패 시 fallback 결과 반환
+            return _get_fallback_results(state)
         
         # 결과 정렬 및 중복 제거
         web_results = _deduplicate_and_rank(all_results)
@@ -197,7 +202,7 @@ def _process_search_results(results: List[Dict], state: Dict[str, Any]) -> List[
 
 def _calculate_relevance_score(title: str, content: str, question: str) -> float:
     """
-    제목과 내용의 여행자보험 관련성을 점수화합니다.
+    제목과 내용의 여행자보험 관련성을 점수화합니다. (성능 최적화)
     
     Args:
         title: 검색 결과 제목
@@ -208,40 +213,19 @@ def _calculate_relevance_score(title: str, content: str, question: str) -> float
         관련성 점수 (0.0 ~ 1.0)
     """
     text = f"{title} {content}".lower()
-    question_lower = question.lower()
     
-    # 여행자보험 관련 키워드 (확장)
-    insurance_keywords = [
-        "여행자보험", "여행보험", "해외여행보험", "해외여행자보험",
-        "보험료", "보장내용", "보험금", "특약", "가입조건",
-        "보험사", "손해보험", "화재보험", "생명보험", "보험",
-        "의료비", "상해", "질병", "휴대품", "여행지연", "여행취소"
-    ]
+    # 핵심 키워드만 사용하여 성능 최적화
+    core_keywords = ["여행자보험", "여행보험", "보험", "여행"]
     
-    # 여행 관련 키워드 (확장)
-    travel_keywords = [
-        "여행", "해외여행", "국내여행", "여행지", "관광",
-        "항공", "호텔", "여행사", "여행상품", "출국", "입국",
-        "해외", "외국"
-    ]
+    # 간단한 키워드 매칭 점수 계산
+    keyword_count = sum(1 for keyword in core_keywords if keyword in text)
+    base_score = keyword_count / len(core_keywords)
     
-    # 키워드 매칭 점수 계산
-    insurance_score = sum(1 for keyword in insurance_keywords if keyword in text) / len(insurance_keywords)
-    travel_score = sum(1 for keyword in travel_keywords if keyword in text) / len(travel_keywords)
-    question_score = sum(1 for word in question_lower.split() if word in text) / max(len(question_lower.split()), 1)
-    
-    # 가중 평균으로 최종 점수 계산 (여행자보험 키워드에 더 높은 가중치)
-    final_score = (insurance_score * 0.6) + (travel_score * 0.3) + (question_score * 0.1)
-    
-    # 특별 키워드 보너스
-    special_bonus = 0
+    # 여행자보험 키워드 보너스
     if "여행자보험" in text or "여행보험" in text:
-        special_bonus += 0.3
-    if "특별조항" in text or "특약" in text:
-        special_bonus += 0.2
+        base_score += 0.3
     
-    final_score = min(final_score + special_bonus, 1.0)
-    return final_score
+    return min(base_score, 1.0)
 
 def _deduplicate_and_rank(results: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """
@@ -266,7 +250,7 @@ def _deduplicate_and_rank(results: List[Dict[str, Any]]) -> List[Dict[str, Any]]
     # 점수 기반 정렬 (내림차순)
     unique_results.sort(key=lambda x: x.get("score_web", 0), reverse=True)
     
-    return unique_results[:5]  # 상위 5개 결과만 반환
+    return unique_results[:3]  # 성능 최적화: 상위 3개 결과만 반환
 
 def _check_cache(state: Dict[str, Any]) -> Optional[List[Dict[str, Any]]]:
     """
@@ -311,10 +295,10 @@ def _save_to_cache(state: Dict[str, Any], results: List[Dict[str, Any]]) -> None
         # 캐시 키 생성
         cache_key = _generate_cache_key(state)
         
-        # 30분 TTL로 캐시 저장
+        # 10분 TTL로 캐시 저장 (성능 최적화)
         redis_client.setex(
             cache_key,
-            1800,  # 30분
+            600,  # 10분
             json.dumps(results, ensure_ascii=False)
         )
         
