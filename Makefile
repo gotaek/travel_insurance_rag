@@ -177,3 +177,19 @@ test-summarize-unit:
 test-summarize-integration:
 	@echo "🔗 Summarize 노드 통합 테스트 실행..."
 	docker compose exec api bash -c 'export PATH=$$PATH:/home/appuser/.local/bin && pytest tests/integration/test_summarize_integration.py -v'
+
+# Compare 노드 전용 테스트
+.PHONY: test-compare test-compare-unit test-compare-integration
+
+test-compare:
+	@echo "🔍 Compare 노드 전체 테스트 실행..."
+	docker compose exec api bash -c 'export PATH=$$PATH:/home/appuser/.local/bin && pytest tests/unit/test_compare.py tests/integration/test_compare_integration.py -v'
+
+test-compare-unit:
+	@echo "🔬 Compare 노드 단위 테스트 실행..."
+	docker compose exec api bash -c 'export PATH=$$PATH:/home/appuser/.local/bin && pytest tests/unit/test_compare.py -v'
+
+test-compare-integration:
+	@echo "🔗 Compare 노드 통합 테스트 실행..."
+	docker compose exec api bash -c 'export PATH=$$PATH:/home/appuser/.local/bin && pytest tests/integration/test_compare_integration.py -v'
+

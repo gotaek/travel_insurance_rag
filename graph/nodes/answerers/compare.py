@@ -35,14 +35,27 @@ def _parse_llm_response(response_text: str) -> Dict[str, Any]:
         else:
             json_text = response_text.strip()
         
-        return json.loads(json_text)
+        parsed_response = json.loads(json_text)
+        
+        # comparison_table 필드가 없으면 기본 구조 추가
+        if "comparison_table" not in parsed_response:
+            parsed_response["comparison_table"] = {
+                "headers": ["항목", "비교 결과"],
+                "rows": [["비교 정보", "표 형태로 제공되지 않음"]]
+            }
+        
+        return parsed_response
     except (json.JSONDecodeError, ValueError) as e:
         # JSON 파싱 실패 시 기본 구조로 fallback
         return {
             "conclusion": "답변을 생성하는 중 오류가 발생했습니다.",
             "evidence": ["응답 파싱 오류"],
             "caveats": ["추가 확인이 필요합니다."],
-            "quotes": []
+            "quotes": [],
+            "comparison_table": {
+                "headers": ["항목", "비교 결과"],
+                "rows": [["오류", "파싱 실패"]]
+            }
         }
 
 def compare_node(state: Dict[str, Any]) -> Dict[str, Any]:
@@ -100,6 +113,10 @@ def compare_node(state: Dict[str, Any]) -> Dict[str, Any]:
             "conclusion": f"비교 분석 중 오류가 발생했습니다: '{question}'",
             "evidence": ["LLM 호출 중 오류가 발생했습니다."],
             "caveats": ["추가 확인이 필요합니다.", f"오류: {str(e)}"],
-            "quotes": []
+            "quotes": [],
+            "comparison_table": {
+                "headers": ["항목", "비교 결과"],
+                "rows": [["오류", "LLM 호출 실패"]]
+            }
         }
         return {**state, "draft_answer": fallback_answer, "final_answer": fallback_answer}
