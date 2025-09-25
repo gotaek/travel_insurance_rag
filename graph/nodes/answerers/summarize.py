@@ -47,7 +47,7 @@ def _parse_llm_response(response_text: str) -> Dict[str, Any]:
 
 def summarize_node(state: Dict[str, Any]) -> Dict[str, Any]:
     """
-    요약 에이전트: 약관/문서를 초등학생도 이해할 수 있도록 요약
+    요약 에이전트: 약관/문서를 쉽게 이해할 수 있도록 요약
     """
     question = state.get("question", "")
     passages = state.get("passages", [])
@@ -87,7 +87,7 @@ def summarize_node(state: Dict[str, Any]) -> Dict[str, Any]:
             answer["quotes"] = [
                 {
                     "text": p.get("text", "")[:200] + "...",
-                    "source": f"{p.get('doc_id', '알 수 없음')}_페이지{p.get('page', '?')}"
+                    "source": f"{p.get('doc_id', '알 수 없음')}_{p.get('doc_name', '문서')}_페이지{p.get('page', '?')}"
                 }
                 for p in passages[:3]  # 상위 3개만
             ]
