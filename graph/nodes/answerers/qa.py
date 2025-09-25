@@ -12,7 +12,7 @@ def _load_prompt(prompt_name: str) -> str:
 
 def _format_context(passages: list) -> str:
     """검색된 문서를 컨텍스트로 포맷팅"""
-    if not passages:
+    if not passages or passages is None:
         return "관련 문서를 찾을 수 없습니다."
     
     context_parts = []
@@ -61,18 +61,18 @@ def qa_node(state: Dict[str, Any]) -> Dict[str, Any]:
     
     # 최종 프롬프트 구성
     full_prompt = f"""
-{system_prompt}
+        {system_prompt}
 
-{qa_prompt}
+        {qa_prompt}
 
-## 질문
-{question}
+        ## 질문
+        {question}
 
-## 참고 문서
-{context}
+        ## 참고 문서
+        {context}
 
-위 문서를 참고하여 질문에 답변해주세요. 반드시 JSON 형식으로 답변하세요.
-"""
+        위 문서를 참고하여 질문에 답변해주세요. 반드시 JSON 형식으로 답변하세요.
+    """
     
     try:
         # LLM 호출 (타임아웃 설정)

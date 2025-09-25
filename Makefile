@@ -130,3 +130,18 @@ test-verify-refine-unit:
 test-verify-refine-integration:
 	@echo "🔗 Verify Refine 노드 통합 테스트 실행..."
 	docker compose exec api bash -c 'export PATH=$$PATH:/home/appuser/.local/bin && pytest tests/integration/test_verify_refine_integration.py -v'
+
+# QA 노드 전용 테스트
+.PHONY: test-qa test-qa-unit test-qa-integration
+
+test-qa:
+	@echo "🔍 QA 노드 전체 테스트 실행..."
+	docker compose exec api bash -c 'export PATH=$$PATH:/home/appuser/.local/bin && pytest tests/unit/test_qa.py tests/integration/test_qa_integration.py -v'
+
+test-qa-unit:
+	@echo "🔬 QA 노드 단위 테스트 실행..."
+	docker compose exec api bash -c 'export PATH=$$PATH:/home/appuser/.local/bin && pytest tests/unit/test_qa.py -v'
+
+test-qa-integration:
+	@echo "🔗 QA 노드 통합 테스트 실행..."
+	docker compose exec api bash -c 'export PATH=$$PATH:/home/appuser/.local/bin && pytest tests/integration/test_qa_integration.py -v'
