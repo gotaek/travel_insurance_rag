@@ -1,6 +1,14 @@
-from typing import Dict, Any
+from typing import Dict, Any, List
 import json
+import logging
 from app.deps import get_llm
+
+# 로깅 설정
+logger = logging.getLogger(__name__)
+
+# 상수 정의
+QUALITY_THRESHOLD = 0.7
+MAX_REPLAN_ATTEMPTS = 3
 
 def reevaluate_node(state: Dict[str, Any]) -> Dict[str, Any]:
     """
@@ -11,16 +19,18 @@ def reevaluate_node(state: Dict[str, Any]) -> Dict[str, Any]:
     citations = state.get("citations", [])
     passages = state.get("refined", [])
     replan_count = state.get("replan_count", 0)
-    max_attempts = state.get("max_replan_attempts", 3)
+    max_attempts = state.get("max_replan_attempts", MAX_REPLAN_ATTEMPTS)
     
     # 답변 텍스트 추출
     answer_text = answer.get("text", "") if isinstance(answer, dict) else str(answer)
     
     # LLM을 사용한 품질 평가
+    logger.info(f"답변 품질 평가 시작 - 질문: {question[:50]}...")
     quality_result = _evaluate_answer_quality(question, answer_text, citations, passages)
     
     # 재검색 횟수 체크
     needs_replan = quality_result["needs_replan"] and replan_count < max_attempts
+    logger.info(f"품질 점수: {quality_result['score']:.2f}, 재검색 필요: {needs_replan}, 재검색 횟수: {replan_count}/{max_attempts}")
     
     return {
         **state,
@@ -28,10 +38,10 @@ def reevaluate_node(state: Dict[str, Any]) -> Dict[str, Any]:
         "quality_feedback": quality_result["feedback"],
         "needs_replan": needs_replan,
         "replan_query": quality_result["replan_query"],
-        "final_answer": answer if quality_result["score"] >= 0.7 or replan_count >= max_attempts else None
+        "final_answer": answer if quality_result["score"] >= QUALITY_THRESHOLD or replan_count >= max_attempts else None
     }
 
-def _evaluate_answer_quality(question: str, answer: str, citations: list, passages: list) -> Dict[str, Any]:
+def _evaluate_answer_quality(question: str, answer: str, citations: List[Dict[str, Any]], passages: List[Dict[str, Any]]) -> Dict[str, Any]:
     """
     LLM을 사용하여 답변 품질을 평가하고 재검색 필요성을 판단
     """
@@ -69,6 +79,7 @@ def _evaluate_answer_quality(question: str, answer: str, citations: list, passag
 """
 
     try:
+        logger.debug("LLM을 사용한 품질 평가 시작")
         llm = get_llm()
         response = llm.generate_content(prompt, request_options={"timeout": 30})
         
@@ -82,15 +93,18 @@ def _evaluate_answer_quality(question: str, answer: str, citations: list, passag
             json_text = response_text
         
         result = json.loads(json_text)
+        logger.debug(f"LLM 응답 파싱 완료: {result}")
         
         # 유효성 검증
         score = result.get("score", 0.5)
         if not isinstance(score, (int, float)) or score < 0 or score > 1:
+            logger.warning(f"유효하지 않은 점수: {score}, 기본값 0.5 사용")
             score = 0.5
             
         needs_replan = result.get("needs_replan", False)
         if not isinstance(needs_replan, bool):
-            needs_replan = score < 0.7
+            needs_replan = score < QUALITY_THRESHOLD
+            logger.warning(f"유효하지 않은 needs_replan: {needs_replan}, 점수 기반으로 설정")
             
         replan_query = result.get("replan_query")
         if replan_query == "null" or replan_query is None:
@@ -104,10 +118,10 @@ def _evaluate_answer_quality(question: str, answer: str, citations: list, passag
         }
         
     except Exception as e:
-        print(f"⚠️ 품질 평가 실패, fallback 사용: {str(e)}")
+        logger.error(f"LLM 품질 평가 실패, fallback 사용: {str(e)}")
         return _fallback_evaluate(question, answer, citations, passages)
 
-def _fallback_evaluate(question: str, answer: str, citations: list, passages: list) -> Dict[str, Any]:
+def _fallback_evaluate(question: str, answer: str, citations: List[Dict[str, Any]], passages: List[Dict[str, Any]]) -> Dict[str, Any]:
     """
     LLM 호출 실패 시 사용하는 간단한 휴리스틱 평가
     """
@@ -135,8 +149,10 @@ def _fallback_evaluate(question: str, answer: str, citations: list, passages: li
     # 점수 제한
     score = min(score, 1.0)
     
-    needs_replan = score < 0.7
+    needs_replan = score < QUALITY_THRESHOLD
     replan_query = question if needs_replan else ""
+    
+    logger.info(f"Fallback 평가 완료 - 점수: {score:.2f}, 재검색 필요: {needs_replan}")
     
     return {
         "score": score,
