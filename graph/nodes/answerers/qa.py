@@ -82,8 +82,8 @@ def qa_node(state: Dict[str, Any]) -> Dict[str, Any]:
         # 응답 파싱
         answer = _parse_llm_response(response.text)
         
-        # 출처 정보 추가
-        if passages:
+        # 출처 정보 추가 (quotes가 비어있을 때만)
+        if passages and not answer.get("quotes"):
             answer["quotes"] = [
                 {
                     "text": p.get("text", "")[:200] + "...",

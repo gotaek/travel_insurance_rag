@@ -48,14 +48,26 @@ def _parse_llm_response(response_text: str) -> Dict[str, Any]:
         else:
             json_text = response_text.strip()
         
-        return json.loads(json_text)
+        parsed_response = json.loads(json_text)
+        
+        # 필수 필드 검증 및 기본값 설정
+        return {
+            "conclusion": parsed_response.get("conclusion", "추천 정보를 생성했습니다."),
+            "evidence": parsed_response.get("evidence", []),
+            "caveats": parsed_response.get("caveats", []),
+            "quotes": parsed_response.get("quotes", []),
+            "recommendations": parsed_response.get("recommendations", []),
+            "web_info": parsed_response.get("web_info", {})
+        }
     except (json.JSONDecodeError, ValueError) as e:
         # JSON 파싱 실패 시 기본 구조로 fallback
         return {
             "conclusion": "답변을 생성하는 중 오류가 발생했습니다.",
             "evidence": ["응답 파싱 오류"],
             "caveats": ["추가 확인이 필요합니다."],
-            "quotes": []
+            "quotes": [],
+            "recommendations": [],
+            "web_info": {}
         }
 
 def recommend_node(state: Dict[str, Any]) -> Dict[str, Any]:
@@ -76,21 +88,21 @@ def recommend_node(state: Dict[str, Any]) -> Dict[str, Any]:
     
     # 최종 프롬프트 구성
     full_prompt = f"""
-{system_prompt}
+        {system_prompt}
 
-{recommend_prompt}
+        {recommend_prompt}
 
-## 질문
-{question}
+        ## 질문
+        {question}
 
-## 참고 문서
-{context}
+        ## 참고 문서
+        {context}
 
-## 실시간 뉴스/정보
-{web_info}
+        ## 실시간 뉴스/정보
+        {web_info}
 
-위 정보를 참고하여 맞춤 추천을 해주세요. 반드시 JSON 형식으로 답변하세요.
-"""
+        위 정보를 참고하여 맞춤 추천을 해주세요. 반드시 JSON 형식으로 답변하세요.
+        """
     
     try:
         # LLM 호출
@@ -100,8 +112,8 @@ def recommend_node(state: Dict[str, Any]) -> Dict[str, Any]:
         # 응답 파싱
         answer = _parse_llm_response(response.text)
         
-        # 출처 정보 추가
-        if passages:
+        # 출처 정보 추가 (quotes가 비어있을 때만)
+        if passages and not answer.get("quotes"):
             answer["quotes"] = [
                 {
                     "text": p.get("text", "")[:200] + "...",
@@ -118,6 +130,8 @@ def recommend_node(state: Dict[str, Any]) -> Dict[str, Any]:
             "conclusion": f"추천 생성 중 오류가 발생했습니다: '{question}'",
             "evidence": ["LLM 호출 중 오류가 발생했습니다."],
             "caveats": ["추가 확인이 필요합니다.", f"오류: {str(e)}"],
-            "quotes": []
+            "quotes": [],
+            "recommendations": [],
+            "web_info": {}
         }
         return {**state, "draft_answer": fallback_answer, "final_answer": fallback_answer}

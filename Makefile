@@ -145,3 +145,19 @@ test-qa-unit:
 test-qa-integration:
 	@echo "🔗 QA 노드 통합 테스트 실행..."
 	docker compose exec api bash -c 'export PATH=$$PATH:/home/appuser/.local/bin && pytest tests/integration/test_qa_integration.py -v'
+
+
+# Recommend 노드 전용 테스트
+.PHONY: test-recommend test-recommend-unit test-recommend-integration
+
+test-recommend:
+	@echo "🔍 Recommend 노드 전체 테스트 실행..."
+	docker compose exec api bash -c 'export PATH=$$PATH:/home/appuser/.local/bin && pytest tests/unit/test_recommend.py tests/integration/test_recommend_integration.py -v'
+
+test-recommend-unit:
+	@echo "🔬 Recommend 노드 단위 테스트 실행..."
+	docker compose exec api bash -c 'export PATH=$$PATH:/home/appuser/.local/bin && pytest tests/unit/test_recommend.py -v'
+
+test-recommend-integration:
+	@echo "🔗 Recommend 노드 통합 테스트 실행..."
+	docker compose exec api bash -c 'export PATH=$$PATH:/home/appuser/.local/bin && pytest tests/integration/test_recommend_integration.py -v'
