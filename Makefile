@@ -207,3 +207,18 @@ test-reevaluate-unit:
 test-reevaluate-integration:
 	@echo "🔗 Reevaluate 노드 통합 테스트 실행..."
 	docker compose exec api bash -c 'export PATH=$$PATH:/home/appuser/.local/bin && pytest tests/integration/test_reevaluate_integration.py -v'
+
+# Replan 노드 전용 테스트
+.PHONY: test-replan test-replan-unit test-replan-integration
+
+test-replan:
+	@echo "🔍 Replan 노드 전체 테스트 실행..."
+	docker compose exec api bash -c 'export PATH=$$PATH:/home/appuser/.local/bin && pytest tests/unit/test_replan.py tests/integration/test_replan_integration.py -v'
+
+test-replan-unit:
+	@echo "🔬 Replan 노드 단위 테스트 실행..."
+	docker compose exec api bash -c 'export PATH=$$PATH:/home/appuser/.local/bin && pytest tests/unit/test_replan.py -v'
+
+test-replan-integration:
+	@echo "🔗 Replan 노드 통합 테스트 실행..."
+	docker compose exec api bash -c 'export PATH=$$PATH:/home/appuser/.local/bin && pytest tests/integration/test_replan_integration.py -v'
