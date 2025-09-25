@@ -36,6 +36,7 @@ scikit-learn
 # Cross-encoder dependencies removed for simplified version
 
 streamlit
+plotly
 requests
 tavily-python
 

@@ -18,12 +18,39 @@ def _dedup(passages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         out.append(p)
     return out
 
+def _extract_insurers_from_question(question: str) -> List[str]:
+    """
+    질문에서 보험사명을 추출합니다.
+    """
+    if not question:
+        return []
+    
+    question_lower = question.lower()
+    insurers = []
+    
+    # 보험사명 매핑 테이블
+    insurer_mapping = {
+        "카카오페이": ["카카오페이", "카카오", "kakao"],
+        "현대해상": ["현대해상", "현대", "hyundai"],
+        "db손해보험": ["db손해보험", "db손보", "db", "db손해"],
+        "kb손해보험": ["kb손해보험", "kb손보", "kb", "kb손해"],
+        "삼성화재": ["삼성화재", "삼성", "samsung"]
+    }
+    
+    for standard_name, keywords in insurer_mapping.items():
+        if any(keyword in question_lower for keyword in keywords):
+            if standard_name not in insurers:
+                insurers.append(standard_name)
+    
+    return insurers
+
 def _rerank_with_advanced_scoring(passages: List[Dict[str, Any]], question: str) -> List[Dict[str, Any]]:
     """
     고급 점수 계산을 통한 리랭크
     - 질문-문서 간 의미적 유사도 강화
     - 키워드 매칭 가중치
     - 문서 품질 점수
+    - 보험사별 우선순위 적용
     """
     if not passages or not question:
         return passages
@@ -31,10 +58,14 @@ def _rerank_with_advanced_scoring(passages: List[Dict[str, Any]], question: str)
     question_lower = question.lower()
     question_words = set(question_lower.split())
     
+    # 질문에서 보험사명 추출
+    target_insurers = _extract_insurers_from_question(question)
+    
     reranked = []
     for passage in passages:
         text = passage.get("text", "").lower()
         title = passage.get("title", "").lower()
+        insurer = passage.get("insurer", "").lower()
         
         # 기본 점수
         base_score = passage.get("score", 0.0)
@@ -57,12 +88,23 @@ def _rerank_with_advanced_scoring(passages: List[Dict[str, Any]], question: str)
         insurance_keywords = ["보험", "보장", "보상", "손해", "위험", "보험료", "보험금", "보험사"]
         insurance_bonus = sum(1 for kw in insurance_keywords if kw in text) * 0.1
         
+        # 보험사별 우선순위 가중치
+        insurer_boost = 0.0
+        if target_insurers and insurer:
+            is_target_insurer = any(
+                target_insurer.lower() in insurer or insurer in target_insurer.lower()
+                for target_insurer in target_insurers
+            )
+            if is_target_insurer:
+                insurer_boost = 0.3  # 타겟 보험사 문서에 30% 가중치
+        
         # 최종 점수 계산
         final_score = (
-            base_score * 0.6 +           # 기본 검색 점수
-            keyword_score * 0.3 +        # 키워드 매칭
-            quality_score * 0.1 +         # 문서 품질
-            insurance_bonus              # 보험 전문성 보너스
+            base_score * 0.5 +           # 기본 검색 점수 (가중치 감소)
+            keyword_score * 0.25 +       # 키워드 매칭
+            quality_score * 0.1 +        # 문서 품질
+            insurance_bonus +            # 보험 전문성 보너스
+            insurer_boost                # 보험사 우선순위 가중치
         )
         
         # 점수 업데이트
@@ -70,6 +112,8 @@ def _rerank_with_advanced_scoring(passages: List[Dict[str, Any]], question: str)
         passage_copy["score"] = min(final_score, 1.0)
         passage_copy["rerank_score"] = final_score
         passage_copy["keyword_matches"] = text_matches + title_matches
+        passage_copy["insurer_boost"] = insurer_boost > 0
+        passage_copy["target_insurer"] = insurer_boost > 0
         reranked.append(passage_copy)
     
     return reranked
@@ -193,6 +237,14 @@ def rank_filter_node(state: Dict[str, Any]) -> Dict[str, Any]:
     sorted_passages = _sort_by_score(filtered)
     topk = sorted_passages[:5]
     
+    # 보험사별 통계 계산
+    target_insurers = _extract_insurers_from_question(question)
+    insurer_stats = {}
+    if target_insurers:
+        for insurer in target_insurers:
+            count = sum(1 for p in topk if p.get("target_insurer", False) and insurer.lower() in p.get("insurer", "").lower())
+            insurer_stats[insurer] = count
+    
     # 메타데이터 추가
     rank_meta = {
         "original_count": len(passages),
@@ -203,7 +255,10 @@ def rank_filter_node(state: Dict[str, Any]) -> Dict[str, Any]:
         "final_count": len(topk),
         "rerank_method": "traditional",
         "rerank_applied": True,
-        "mmr_applied": True
+        "mmr_applied": True,
+        "target_insurers": target_insurers,
+        "insurer_boost_applied": len(target_insurers) > 0,
+        "insurer_stats": insurer_stats
     }
     
     return {**state, "refined": topk, "rank_meta": rank_meta}

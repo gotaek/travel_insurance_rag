@@ -98,46 +98,59 @@ def websearch_node(state: Dict[str, Any]) -> Dict[str, Any]:
 def _build_search_queries(state: Dict[str, Any]) -> List[str]:
     """
     질문과 의도에 따라 검색 쿼리를 구성합니다.
+    400자 제한을 고려하여 쿼리를 단축합니다.
     
     Args:
         state: RAG 상태 딕셔너리
         
     Returns:
-        검색 쿼리 리스트
+        검색 쿼리 리스트 (400자 제한)
     """
     question = state.get("question", "")
     intent = state.get("intent", "qa")
+    
+    # 질문 길이 제한 (400자 제한 고려)
+    max_question_length = 300  # 여유를 두고 300자로 제한
+    if len(question) > max_question_length:
+        question = question[:max_question_length] + "..."
     
     # 기본 쿼리
     base_query = f"여행자보험 {question}"
     queries = [base_query]
     
-    # 의도별 특화 쿼리 추가
+    # 의도별 특화 쿼리 추가 (각 쿼리도 400자 제한)
     if intent == "compare":
         queries.extend([
-            f"여행자보험 비교 {question}",
-            f"보험상품 비교 {question}",
-            f"여행자보험 가격비교 {question}"
+            f"여행자보험 비교 {question[:100]}",
+            f"보험상품 비교 {question[:100]}",
+            f"여행자보험 가격비교 {question[:100]}"
         ])
     elif intent == "recommend":
         queries.extend([
-            f"여행자보험 추천 {question}",
-            f"여행지별 보험 {question}",
-            f"여행자보험 특약 추천 {question}"
+            f"여행자보험 추천 {question[:100]}",
+            f"여행지별 보험 {question[:100]}",
+            f"여행자보험 특약 추천 {question[:100]}"
         ])
     elif intent == "summary":
         queries.extend([
-            f"여행자보험 약관 요약 {question}",
-            f"보험상품 정리 {question}"
+            f"여행자보험 약관 요약 {question[:100]}",
+            f"보험상품 정리 {question[:100]}"
         ])
     else:  # qa
         queries.extend([
-            f"여행자보험 보장내용 {question}",
-            f"여행자보험 가입조건 {question}",
-            f"여행자보험 보험료 {question}"
+            f"여행자보험 보장내용 {question[:100]}",
+            f"여행자보험 가입조건 {question[:100]}",
+            f"여행자보험 보험료 {question[:100]}"
         ])
     
-    return queries[:3]  # 최대 3개 쿼리만 사용
+    # 각 쿼리가 400자를 초과하지 않도록 제한
+    limited_queries = []
+    for query in queries[:3]:  # 최대 3개 쿼리만 사용
+        if len(query) > 400:
+            query = query[:400]
+        limited_queries.append(query)
+    
+    return limited_queries
 
 def _process_search_results(results: List[Dict], state: Dict[str, Any]) -> List[Dict[str, Any]]:
     """

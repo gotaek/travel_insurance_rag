@@ -47,6 +47,8 @@ def rag_ask(req: AskRequest):
                 conversation_context = session_manager.create_new_context(
                     session_id, req.user_id
                 )
+                # 새로 생성된 컨텍스트 저장
+                session_manager.save_context(conversation_context)
         
         # 그래프 실행
         g = build_graph()

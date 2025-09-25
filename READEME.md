@@ -45,13 +45,16 @@ INSURANCE_RAG/
 │  └─ vector_db/                # Chroma DB (자동 생성, git 제외)
 │     └─ insurance_docs/        # Chroma DB 컬렉션 (make ingest로 재생성)
 │
+├─ ui/                          # Streamlit 모니터링 UI
+│  ├─ app.py                    # 메인 모니터링 UI: 파이프라인 추적, 문서 분석, 대화 히스토리
+│  ├─ demo.py                   # 데모 UI: API 서버 없이 UI 기능 테스트
+│  ├─ run_ui.py                 # UI 실행 스크립트
+│  └─ README.md                  # UI 사용법 및 기능 설명
+│
 ├─ eval/                        # 오프라인 평가: 회귀 테스트와 지표 일괄 산출
 │  ├─ ragas_pipeline.py         # RAGAS 실행 파이프라인(questions.jsonl→scores.json)
 │  ├─ faithfulness.py           # entailment 기반 사실성 점수(LLM/모델 선택 가능)
 │  └─ recall_at_k.py            # 검색 단계 정답 포함률 측정(골든 인용 대비)
-│
-├─ ui/
-│  └─ app.py                    # Streamlit MVP: 질문→/rag/ask 호출, 4블록 렌더, trace 타임라인 시각화
 │
 ├─ scripts/
 │  ├─ ingest.py                 # 파서→청크→임베딩→Chroma DB 빌드; 증분 업데이트, 실패 재시도, 중복 방지
@@ -67,3 +70,58 @@ INSURANCE_RAG/
 ├─ Dockerfile                   # 멀티스테이지 빌드, 캐시 최적화, 비루트 사용자, 건강검진(CMD curl /healthz)
 ├─ README.md                    # 로컬 실행, API 스펙, 평가 방법, 아키텍처 다이어그램, 운영 가이드
 └─ requirements.txt             # 정확한 버전 핀 고정; prod/dev extras 분리 가능(requirements-dev.txt)
+
+## 🖥️ UI 모니터링 시스템
+
+### Streamlit 기반 실시간 모니터링
+
+이 프로젝트는 RAG 파이프라인의 실시간 모니터링을 위한 Streamlit UI를 제공합니다.
+
+#### 주요 기능
+
+1. **🔍 질문하기**: 여행자보험 관련 질문 입력 및 실시간 답변 생성
+2. **📊 파이프라인 모니터링**: 
+   - 노드별 실행 플로우 시각화
+   - 성능 메트릭 (실행 시간, 토큰 사용량)
+   - 실시간 추적 및 로그 모니터링
+3. **📄 문서 분석**: 
+   - 검색된 문서 분석 및 시각화
+   - 문서 소스별 분포 (로컬/웹)
+   - 관련성 점수 분포
+4. **💬 대화 히스토리**: 세션별 대화 기록 및 통계
+
+#### 실행 방법
+
+```bash
+# 1. API 서버 실행
+make run
+
+# 2. UI 실행 (새 터미널에서)
+make ui
+# 또는
+streamlit run ui/app.py --server.port 8501
+
+# 3. 데모 UI 실행 (API 서버 없이)
+make ui-demo
+# 또는
+streamlit run ui/demo.py --server.port 8502
+```
+
+#### 접속 URL
+- **메인 UI**: http://localhost:8501
+- **데모 UI**: http://localhost:8502
+
+#### 파이프라인 노드 모니터링
+
+각 RAG 파이프라인 노드의 input/output을 실시간으로 모니터링할 수 있습니다:
+
+- **Planner**: 질문 의도 분석 및 실행 계획 수립
+- **Websearch**: 실시간 웹 정보 수집
+- **Search**: 벡터/키워드/하이브리드 검색
+- **Rank Filter**: 문서 관련성 기반 필터링
+- **Verify Refine**: 문서 품질 검증
+- **Answer Nodes**: 의도별 답변 생성 (QA/Summary/Compare/Recommend)
+- **Reevaluate**: 답변 품질 평가
+- **Replan**: 품질 개선을 위한 재검색 계획
+
+자세한 사용법은 `ui/README.md`를 참조하세요.

@@ -4,6 +4,11 @@ import os
 import json
 from pathlib import Path
 
+try:
+    import chromadb
+except Exception:
+    chromadb = None
+
 def _tokenize(s: str) -> List[str]:
     # 간단 토크나이저(공백 분리). 한국어 형태소 분석 대체용 스텁.
     return s.lower().split()

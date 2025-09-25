@@ -13,6 +13,96 @@ from retriever.korean_tokenizer import (
 )
 from app.deps import get_settings
 
+def _extract_insurers_from_question(question: str) -> List[str]:
+    """
+    질문에서 보험사명을 추출합니다.
+    
+    Args:
+        question: 사용자 질문
+        
+    Returns:
+        추출된 보험사명 리스트
+    """
+    if not question:
+        return []
+    
+    question_lower = question.lower()
+    insurers = []
+    
+    # 보험사명 매핑 테이블 (키워드 -> 표준 보험사명)
+    insurer_mapping = {
+        "카카오페이": ["카카오페이", "카카오", "kakao"],
+        "현대해상": ["현대해상", "현대", "hyundai"],
+        "db손해보험": ["db손해보험", "db손보", "db", "db손해"],
+        "kb손해보험": ["kb손해보험", "kb손보", "kb", "kb손해"],
+        "삼성화재": ["삼성화재", "삼성", "samsung"],
+        "현대해상": ["현대해상", "현대", "hyundai"]
+    }
+    
+    # 질문에서 보험사명 검색
+    for standard_name, keywords in insurer_mapping.items():
+        if any(keyword in question_lower for keyword in keywords):
+            if standard_name not in insurers:  # 중복 방지
+                insurers.append(standard_name)
+    
+    return insurers
+
+def _enhance_query_with_insurers(question: str, target_insurers: List[str]) -> str:
+    """
+    보험사명을 포함한 검색 쿼리를 확장합니다.
+    
+    Args:
+        question: 원본 질문
+        target_insurers: 타겟 보험사명 리스트
+        
+    Returns:
+        보험사명이 포함된 확장된 쿼리
+    """
+    if not target_insurers:
+        return question
+    
+    # 보험사명을 쿼리에 추가하여 검색 정확도 향상
+    insurer_terms = " ".join(target_insurers)
+    enhanced_query = f"{question} {insurer_terms}"
+    
+    return enhanced_query
+
+def _boost_insurer_documents(passages: List[Dict[str, Any]], target_insurers: List[str]) -> List[Dict[str, Any]]:
+    """
+    특정 보험사 문서에 가중치를 부여합니다.
+    
+    Args:
+        passages: 검색 결과 패시지 리스트
+        target_insurers: 타겟 보험사명 리스트
+        
+    Returns:
+        가중치가 적용된 패시지 리스트
+    """
+    if not target_insurers:
+        return passages
+    
+    boosted = []
+    for passage in passages:
+        passage_copy = dict(passage)
+        insurer = passage.get("insurer", "").lower()
+        
+        # 타겟 보험사 문서에 가중치 부여
+        is_target_insurer = any(
+            target_insurer.lower() in insurer or insurer in target_insurer.lower()
+            for target_insurer in target_insurers
+        )
+        
+        if is_target_insurer:
+            # 보험사 매칭 시 50% 가중치 부여
+            base_score = passage_copy.get("score", 0.0)
+            passage_copy["score"] = min(base_score * 1.5, 1.0)
+            passage_copy["insurer_boost"] = True
+            passage_copy["target_insurer"] = True
+        
+        boosted.append(passage_copy)
+    
+    return boosted
+
 def search_node(state: Dict[str, Any]) -> Dict[str, Any]:
     """
     웹 검색 결과를 활용한 개선된 하이브리드 검색 수행
@@ -44,8 +134,14 @@ def search_node(state: Dict[str, Any]) -> Dict[str, Any]:
     db_path = s.VECTOR_DIR
     collection_name = "insurance_docs"
 
+    # 보험사명 추출
+    target_insurers = _extract_insurers_from_question(q)
+    
+    # 보험사명을 포함한 쿼리 확장
+    insurer_enhanced_query = _enhance_query_with_insurers(q, target_insurers)
+    
     # 웹 검색 결과를 활용한 쿼리 확장
-    enhanced_query = _enhance_query_with_web_results(q, web_results)
+    enhanced_query = _enhance_query_with_web_results(insurer_enhanced_query, web_results)
     
     # 확장된 쿼리 길이 기반 k 값 조정
     k = _determine_k_value(enhanced_query, web_results)
@@ -59,7 +155,9 @@ def search_node(state: Dict[str, Any]) -> Dict[str, Any]:
         "from_cache": False,
         "rerank_candidates": True,  # 리랭크를 위한 대량 후보 제공
         "vector_candidates": 0,
-        "keyword_candidates": 0
+        "keyword_candidates": 0,
+        "target_insurers": target_insurers,  # 타겟 보험사 정보 추가
+        "insurer_enhanced": len(target_insurers) > 0  # 보험사 쿼리 확장 여부
     }
 
     try:
@@ -95,6 +193,10 @@ def search_node(state: Dict[str, Any]) -> Dict[str, Any]:
             web_passages,
             k=k * 10  # rank_filter에서 리랭크할 수 있도록 10배 확장
         )
+        
+        # 보험사별 가중치 적용
+        if target_insurers:
+            merged = _boost_insurer_documents(merged, target_insurers)
         
         search_meta["candidates_count"] = len(merged)
         search_meta["vector_candidates"] = len(vec_results)
