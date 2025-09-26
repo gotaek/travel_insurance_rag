@@ -13,6 +13,12 @@ class RAGState(TypedDict, total=False):
     refined: Annotated[List[Dict[str, Any]], "정제된 문서 패시지"]
     web_results: Annotated[List[Dict[str, Any]], "웹 검색 결과"]
     
+    # 보험사 필터링 정보
+    insurer_filter: Annotated[Optional[List[str]], "보험사 필터 리스트"]
+    extracted_insurers: Annotated[List[str], "추출된 보험사 목록"]
+    owned_insurers: Annotated[List[str], "보유 보험사 목록"]
+    non_owned_insurers: Annotated[List[str], "비보유 보험사 목록"]
+    
     # 답변 정보
     draft_answer: Annotated[Dict[str, Any], "초안 답변"]
     citations: Annotated[List[Dict[str, Any]], "인용 정보"]

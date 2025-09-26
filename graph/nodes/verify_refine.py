@@ -216,10 +216,14 @@ def _normalize_amount(amount_str: str) -> str:
         return f"{num // 1000}천원"
     return original
 
-def _build_standardized_citations(refined: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """표준화된 인용 구조 생성"""
+def _build_standardized_citations(refined: List[Dict[str, Any]], insurer_filter: List[str] = None) -> List[Dict[str, Any]]:
+    """표준화된 인용 구조 생성 (보험사 우선순위 적용)"""
     citations = []
     seen_hashes = set()
+    
+    # 보험사 필터가 있으면 우선순위 정렬
+    if insurer_filter:
+        refined = _prioritize_insurer_documents(refined, insurer_filter)
     
     for doc in refined:
         # 텍스트 해시 생성 (중복 제거용)
@@ -235,6 +239,15 @@ def _build_standardized_citations(refined: List[Dict[str, Any]]) -> List[Dict[st
         snippet = re.sub(r'\d{3}-\d{4}-\d{4}', 'XXX-XXXX-XXXX', snippet)  # 전화번호
         snippet = re.sub(r'\d{6}-\d{7}', 'XXXXXX-XXXXXXX', snippet)  # 주민번호
         
+        # 보험사 매칭 여부 확인
+        is_insurer_match = False
+        if insurer_filter:
+            doc_insurer = doc.get("insurer", "").lower()
+            for filter_insurer in insurer_filter:
+                if filter_insurer.lower() in doc_insurer or doc_insurer in filter_insurer.lower():
+                    is_insurer_match = True
+                    break
+        
         citation = {
             "doc_id": doc.get("doc_id"),
             "page": doc.get("page"),
@@ -246,11 +259,50 @@ def _build_standardized_citations(refined: List[Dict[str, Any]]) -> List[Dict[st
             "score": doc.get("score", 0.0),
             "version_date": doc.get("version_date"),
             "doc_type": doc.get("doc_type", "기타"),
-            "source_weight": doc.get("source_weight", 1.0)
+            "source_weight": doc.get("source_weight", 1.0),
+            "is_insurer_match": is_insurer_match  # 보험사 매칭 여부 추가
         }
         citations.append(citation)
     
     return citations
+
+def _prioritize_insurer_documents(refined: List[Dict[str, Any]], insurer_filter: List[str]) -> List[Dict[str, Any]]:
+    """
+    보험사 매칭 문서를 우선적으로 정렬합니다.
+    
+    Args:
+        refined: 검색 결과 문서 리스트
+        insurer_filter: 우선순위를 부여할 보험사 리스트
+        
+    Returns:
+        보험사 우선순위가 적용된 문서 리스트
+    """
+    if not insurer_filter:
+        return refined
+    
+    # 보험사 매칭 문서와 비매칭 문서 분리
+    insurer_matched = []
+    other_docs = []
+    
+    for doc in refined:
+        doc_insurer = doc.get("insurer", "").lower()
+        is_matched = False
+        
+        for filter_insurer in insurer_filter:
+            if filter_insurer.lower() in doc_insurer or doc_insurer in filter_insurer.lower():
+                is_matched = True
+                break
+        
+        if is_matched:
+            insurer_matched.append(doc)
+        else:
+            other_docs.append(doc)
+    
+    # 보험사 매칭 문서를 먼저 배치하고, 각 그룹 내에서는 점수 순으로 정렬
+    insurer_matched.sort(key=lambda x: x.get("score", 0.0), reverse=True)
+    other_docs.sort(key=lambda x: x.get("score", 0.0), reverse=True)
+    
+    return insurer_matched + other_docs
 
 def _determine_verification_status(warnings: List[str], requirements: Dict[str, int], 
                                  refined: List[Dict[str, Any]], citations: List[Dict[str, Any]]) -> Tuple[str, str]:
@@ -306,7 +358,7 @@ def _generate_metrics(warnings: List[str], refined: List[Dict[str, Any]]) -> Dic
     return metrics
 
 def verify_refine_node(state: Dict[str, Any]) -> Dict[str, Any]:
-    """개선된 검증 및 정제 노드"""
+    """개선된 검증 및 정제 노드 (보험사 우선순위 적용)"""
     # 정책 로드 및 스키마 검증
     policies = _load_policies()
     schema_warnings = _validate_policy_schema(policies)
@@ -315,6 +367,7 @@ def verify_refine_node(state: Dict[str, Any]) -> Dict[str, Any]:
     refined = state.get("refined", []) or []
     warnings = state.get("warnings", []) or []
     intent = state.get("intent", "qa")
+    insurer_filter = state.get("insurer_filter", None)  # Planner에서 전달된 보험사 필터
     
     # 스키마 경고 추가
     warnings.extend(schema_warnings)
@@ -334,8 +387,8 @@ def verify_refine_node(state: Dict[str, Any]) -> Dict[str, Any]:
     conflict_warnings = _detect_conflicts(unique_refined)
     warnings.extend(conflict_warnings)
     
-    # 표준화된 인용 생성
-    citations = _build_standardized_citations(unique_refined)
+    # 표준화된 인용 생성 (보험사 우선순위 적용)
+    citations = _build_standardized_citations(unique_refined, insurer_filter)
     
     # 검증 상태 결정
     verification_status, next_action = _determine_verification_status(
@@ -360,9 +413,10 @@ def verify_refine_node(state: Dict[str, Any]) -> Dict[str, Any]:
         "needs_more_search": needs_more_search,
         "requirements": requirements,
         "metrics": metrics,
-        "policy_disclaimer": disclaimer
+        "policy_disclaimer": disclaimer,
+        "insurer_filter": insurer_filter  # 보험사 필터 정보 유지
     }
     
-    logger.info(f"검증 완료: {verification_status}, 다음 액션: {next_action}, 경고: {len(warnings)}개")
+    logger.info(f"검증 완료: {verification_status}, 다음 액션: {next_action}, 경고: {len(warnings)}개, 보험사 필터: {insurer_filter}")
     
     return out

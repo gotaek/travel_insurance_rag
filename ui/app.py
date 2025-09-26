@@ -254,13 +254,37 @@ def render_performance_metrics(trace_data: List[Dict[str, Any]]) -> None:
         fig_tokens_out.update_layout(xaxis_tickangle=-45)
         st.plotly_chart(fig_tokens_out, use_container_width=True)
 
-def render_document_analysis(passages: List[Dict[str, Any]]) -> None:
+def render_document_analysis(passages: List[Dict[str, Any]], search_meta: Dict[str, Any] = None) -> None:
     """검색된 문서 분석"""
     if not passages:
         st.info("검색된 문서가 없습니다.")
         return
     
     st.subheader("📄 검색된 문서 분석")
+    
+    # 보험사 필터링 정보 표시
+    if search_meta:
+        insurer_filtered = search_meta.get('insurer_filtered', False)
+        insurer_filter = search_meta.get('insurer_filter', [])
+        filter_method = search_meta.get('filter_method', 'unknown')
+        
+        if insurer_filtered and insurer_filter:
+            st.success(f"🎯 보험사 필터링 적용: {', '.join(insurer_filter)}")
+            st.info(f"필터링 방법: {filter_method}")
+            
+            # 필터링된 보험사 문서 수 표시
+            filtered_insurer_counts = {}
+            for passage in passages:
+                insurer = passage.get('insurer', 'Unknown')
+                if insurer in insurer_filter:
+                    filtered_insurer_counts[insurer] = filtered_insurer_counts.get(insurer, 0) + 1
+            
+            if filtered_insurer_counts:
+                st.write("**필터링된 보험사별 문서 수:**")
+                for insurer, count in filtered_insurer_counts.items():
+                    st.write(f"  - {insurer}: {count}개")
+        else:
+            st.info("ℹ️ 보험사 필터링 없음 - 전체 문서 검색")
     
     # 문서 소스별 분류
     sources = {}
@@ -308,6 +332,11 @@ def render_document_analysis(passages: List[Dict[str, Any]]) -> None:
         # 보험사별 문서 수
         insurer_counts = {insurer: len(docs) for insurer, docs in insurer_docs.items()}
         
+        # 보험사 필터링이 적용된 경우 강조 표시
+        if search_meta and search_meta.get('insurer_filtered', False):
+            target_insurers = search_meta.get('insurer_filter', [])
+            st.info(f"🎯 필터링된 보험사: {', '.join(target_insurers)}")
+        
         col1, col2 = st.columns(2)
         
         with col1:
@@ -349,6 +378,13 @@ def render_document_analysis(passages: List[Dict[str, Any]]) -> None:
         if passage.get('target_insurer', False):
             title_suffix += " ⭐"
         
+        # 보험사 필터링이 적용된 경우 해당 보험사 문서 강조
+        insurer = passage.get('insurer', 'N/A')
+        if search_meta and search_meta.get('insurer_filtered', False):
+            target_insurers = search_meta.get('insurer_filter', [])
+            if insurer in target_insurers:
+                title_suffix += " 🎯"
+        
         with st.expander(f"문서 {i+1}: {passage.get('title', '제목 없음')} (점수: {passage.get('score', 0):.3f}){title_suffix}"):
             col1, col2, col3 = st.columns(3)
             
@@ -361,10 +397,16 @@ def render_document_analysis(passages: List[Dict[str, Any]]) -> None:
                 st.write(f"**문서ID**: {passage.get('doc_id', 'N/A')}")
             
             with col3:
-                insurer = passage.get('insurer', 'N/A')
                 insurer_display = insurer
                 if passage.get('target_insurer', False):
                     insurer_display += " ⭐"
+                
+                # 보험사 필터링이 적용된 경우 해당 보험사 강조
+                if search_meta and search_meta.get('insurer_filtered', False):
+                    target_insurers = search_meta.get('insurer_filter', [])
+                    if insurer in target_insurers:
+                        insurer_display += " 🎯"
+                
                 st.write(f"**보험사**: {insurer_display}")
                 if passage.get('url'):
                     st.write(f"**URL**: {passage.get('url')}")
@@ -372,6 +414,12 @@ def render_document_analysis(passages: List[Dict[str, Any]]) -> None:
             # 보험사 부스트 정보
             if passage.get('insurer_boost', False):
                 st.info("🎯 이 문서는 질문에서 언급된 보험사의 문서로 우선순위가 부여되었습니다.")
+            
+            # 보험사 필터링 정보
+            if search_meta and search_meta.get('insurer_filtered', False):
+                target_insurers = search_meta.get('insurer_filter', [])
+                if insurer in target_insurers:
+                    st.success(f"🎯 이 문서는 필터링된 보험사({insurer})의 문서입니다.")
             
             # 문서 내용 미리보기
             text = passage.get('text', '')
@@ -623,6 +671,35 @@ def main():
             with col3:
                 st.metric("실행된 노드 수", len(trace_data))
             
+            # 보험사 필터링 정보
+            planner_nodes = [node for node in trace_data if node.get('node_name') == 'planner']
+            if planner_nodes:
+                st.subheader("🎯 보험사 필터링 정보")
+                planner_meta = planner_nodes[0]
+                insurer_filter = planner_meta.get('insurer_filter', [])
+                extracted_insurers = planner_meta.get('extracted_insurers', [])
+                owned_insurers = planner_meta.get('owned_insurers', [])
+                non_owned_insurers = planner_meta.get('non_owned_insurers', [])
+                
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.metric("추출된 보험사", f"{len(extracted_insurers)}개")
+                with col2:
+                    st.metric("보유 보험사", f"{len(owned_insurers)}개")
+                with col3:
+                    st.metric("비보유 보험사", f"{len(non_owned_insurers)}개")
+                
+                if extracted_insurers:
+                    st.info(f"🔍 질문에서 추출된 보험사: {', '.join(extracted_insurers)}")
+                
+                if insurer_filter:
+                    st.success(f"🎯 적용된 보험사 필터: {', '.join(insurer_filter)}")
+                else:
+                    st.info("ℹ️ 보험사 필터링 없음 - 전체 문서 검색")
+                
+                if non_owned_insurers:
+                    st.warning(f"⚠️ 비보유 보험사로 인한 웹검색 필요: {', '.join(non_owned_insurers)}")
+            
             # re-evaluate 노드 정보
             reevaluate_nodes = [node for node in trace_data if node.get('node_name') == 'reevaluate']
             if reevaluate_nodes:
@@ -654,9 +731,10 @@ def main():
         if monitor.conversation_history:
             latest_result = monitor.conversation_history[-1]['result']
             passages = latest_result.get('passages', [])
+            search_meta = latest_result.get('search_meta', {})
             
             if passages:
-                render_document_analysis(passages)
+                render_document_analysis(passages, search_meta)
             else:
                 st.info("검색된 문서가 없습니다.")
         else:

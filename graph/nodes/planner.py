@@ -1,4 +1,4 @@
-from typing import Dict, Any
+from typing import Dict, Any, List, Optional
 import json
 import re
 import logging
@@ -9,6 +9,106 @@ from graph.models import PlannerResponse
 logger = logging.getLogger(__name__)
 
 INTENTS = ["summary", "compare", "qa", "recommend"]
+
+# 보유 보험사 목록
+OWNED_INSURERS = ["삼성화재", "카카오페이", "현대해상", "DB손해보험", "KB손해보험"]
+
+# 상단에 보조 맵 추가
+ALIAS_MAP = {
+    # 보유 5사 (정식명 → 동일, 약칭/영문 → 정식명)
+    "삼성화재": "삼성화재", "삼성": "삼성화재", "samsung fire": "삼성화재", 
+    "카카오페이": "카카오페이", "카카오": "카카오페이", "kakaopay": "카카오페이", "kakao": "카카오페이",
+    "현대해상": "현대해상", "현대": "현대해상", "hyundai marine": "현대해상",
+    "db손해보험": "DB손해보험", "db": "DB손해보험", "동부화재": "DB손해보험", "동부": "DB손해보험",
+    "kb손해보험": "KB손해보험", "kb": "KB손해보험", "kb손해": "KB손해보험",
+
+    # 비보유 예시(확장 가능) — 정식명/약칭을 동일 canonical로
+    "한화손해보험": "한화손해보험", "한화": "한화손해보험",
+    "메리츠화재": "메리츠화재", "메리츠": "메리츠화재",
+    "롯데손해보험": "롯데손해보험", "롯데": "롯데손해보험",
+    "nh손해보험": "NH손해보험", "nh": "NH손해보험",
+    "흥국화재": "흥국화재", "흥국": "흥국화재",
+    "axa손해보험": "AXA손해보험", "axa": "AXA손해보험",
+    "mg손해보험": "MG손해보험", "mg": "MG손해보험",
+    "신한손해보험": "신한손해보험", "신한": "신한손해보험",
+    "하나손해보험": "하나손해보험", "하나": "하나손해보험",
+}
+
+# 정규식 패턴용 후보(길이 내림차순으로 중복/겹침 방지)
+ALIAS_SORTED = sorted(ALIAS_MAP.keys(), key=len, reverse=True)
+
+# 한국어 조사/공백/문장부호 경계 허용 (앞뒤로 글자/숫자 이어붙임 방지)
+# ex) "현대해상은", "KB손해보험(여행자)", "DB 손해보험"
+BOUNDARY = r"(?<![가-힣A-Za-z0-9]){}(?![가-힣A-Za-z0-9])"
+
+def _extract_insurers_from_question(question: str) -> List[str]:
+    """
+    질문에서 보험사 엔티티(정식명 canonical)를 추출합니다.
+    - 긴 별칭 우선 매칭
+    - 약칭/영문 별칭을 정식명으로 정규화
+    - 한국어 조사/문장부호 경계 허용
+    - 중복 제거, 겹침 방지
+    """
+    q = question.lower()
+    found = []
+    used_spans = []  # (start, end)로 겹침 방지
+
+    for alias in ALIAS_SORTED:
+        # 간단한 단어 경계 검색
+        if alias.lower() in q:
+            # 겹침 방지
+            start_pos = q.find(alias.lower())
+            end_pos = start_pos + len(alias.lower())
+            
+            # 겹치는지 확인
+            if any(not (end_pos <= s or e <= start_pos) for s, e in used_spans):
+                continue
+                
+            canon = ALIAS_MAP[alias]
+            found.append(canon)
+            used_spans.append((start_pos, end_pos))
+
+    # 순서 보존 중복 제거
+    seen = set()
+    dedup = []
+    for c in found:
+        if c not in seen:
+            dedup.append(c)
+            seen.add(c)
+    return dedup
+
+def _determine_insurer_filter_and_web_need(question: str) -> Dict[str, Any]:
+    """
+    추출 결과를 보유/비보유로 나누고, filter/needs_web을 결정
+    """
+    extracted = _extract_insurers_from_question(question)
+
+    if not extracted:
+        return {
+            "insurer_filter": None,
+            "needs_web": False,
+            "extracted_insurers": [],
+            "owned_insurers": [],
+            "non_owned_insurers": []
+        }
+
+    # 보유/비보유 분리
+    owned = [c for c in extracted if c in OWNED_INSURERS]
+    non_owned = [c for c in extracted if c not in OWNED_INSURERS]
+
+    # 하나라도 비보유가 있으면 웹 필요
+    needs_web = len(non_owned) > 0
+
+    # 보유사가 하나라도 있으면 filter, 없으면 None
+    insurer_filter = owned if owned else None
+
+    return {
+        "insurer_filter": insurer_filter,
+        "needs_web": needs_web,
+        "extracted_insurers": extracted,
+        "owned_insurers": owned,
+        "non_owned_insurers": non_owned
+    }
 
 def _llm_classify_intent(question: str) -> Dict[str, Any]:
     """
@@ -362,6 +462,7 @@ def _is_llm_result_better(fallback_result: Dict[str, Any], llm_result: Dict[str,
 def planner_node(state: Dict[str, Any]) -> Dict[str, Any]:
     """
     LLM 기반 질문 분석 및 분기 결정 (성능 최적화: fallback 우선 사용)
+    보험사 엔티티 추출 및 필터링 로직 포함
     """
     q = state.get("question", "")
     replan_count = state.get("replan_count", 0)
@@ -369,6 +470,17 @@ def planner_node(state: Dict[str, Any]) -> Dict[str, Any]:
     # 재검색 횟수 로깅
     if replan_count > 0:
         logger.info(f"재검색으로 인한 planner 재실행 - 재검색 횟수: {replan_count}")
+    
+    # 보험사 엔티티 추출 및 needs_web 결정
+    insurer_info = _determine_insurer_filter_and_web_need(q)
+    logger.info(f"보험사 추출 결과: {insurer_info}")
+    
+    # 디버깅을 위한 상세 로그
+    logger.info(f"질문: '{q}'")
+    logger.info(f"추출된 보험사: {insurer_info['extracted_insurers']}")
+    logger.info(f"보유 보험사: {insurer_info['owned_insurers']}")
+    logger.info(f"비보유 보험사: {insurer_info['non_owned_insurers']}")
+    logger.info(f"보험사 기반 needs_web: {insurer_info['needs_web']}")
     
     # 성능 최적화: fallback 분류 우선 사용
     logger.debug("빠른 fallback 분류 사용")
@@ -387,7 +499,19 @@ def planner_node(state: Dict[str, Any]) -> Dict[str, Any]:
             logger.warning(f"LLM 분류 실패, fallback 결과 유지: {str(e)}")
     
     intent = classification["intent"]
-    needs_web = classification["needs_web"]
+    
+    # 보험사 정보를 기반으로 needs_web 최종 결정
+    # 보험사가 언급된 경우: 보험사 기반 needs_web 우선 적용
+    # 보험사가 언급되지 않은 경우: 기존 needs_web 로직 적용
+    if insurer_info["extracted_insurers"]:
+        # 보험사가 언급된 경우: 보험사 기반 needs_web만 사용
+        needs_web = insurer_info["needs_web"]
+        logger.info(f"보험사 언급됨: {insurer_info['extracted_insurers']}, 보험사 기반 needs_web: {needs_web}")
+    else:
+        # 보험사가 언급되지 않은 경우: 기존 needs_web 로직 사용
+        needs_web = classification["needs_web"]
+        logger.info(f"보험사 언급되지 않음, 기존 needs_web: {needs_web}")
+    
     reasoning = classification.get("reasoning", "")
     
     # 실행 계획 생성
@@ -401,6 +525,11 @@ def planner_node(state: Dict[str, Any]) -> Dict[str, Any]:
         "needs_web": needs_web, 
         "plan": plan,
         "classification_reasoning": reasoning,
+        # 보험사 필터 정보 추가
+        "insurer_filter": insurer_info["insurer_filter"],
+        "extracted_insurers": insurer_info["extracted_insurers"],
+        "owned_insurers": insurer_info["owned_insurers"],
+        "non_owned_insurers": insurer_info["non_owned_insurers"],
         # replan_count는 명시적으로 유지 (초기화하지 않음)
         "replan_count": replan_count,
         "max_replan_attempts": state.get("max_replan_attempts", 3)
