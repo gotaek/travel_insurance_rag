@@ -140,10 +140,12 @@ def hybrid_search(
     keyword_results: List[Dict[str, Any]],
     k: int = 5,
     alpha: float = 0.6,
-    norm_method: str = "minmax"
+    norm_method: str = "minmax",
+    target_insurers: List[str] = None
 ) -> List[Dict[str, Any]]:
     """
     벡터 검색과 키워드 검색 결과를 병합하여 하이브리드 검색 수행.
+    보험사명이 명확히 추출된 경우 키워드 검색 가중치를 동적으로 조정합니다.
     
     Args:
         query: 검색 쿼리
@@ -152,6 +154,7 @@ def hybrid_search(
         k: 반환할 결과 수
         alpha: 벡터 가중치 (0~1)
         norm_method: 정규화 방법 ("minmax", "zscore", "robust")
+        target_insurers: 타겟 보험사명 리스트 (동적 가중치 조정용)
         
     Returns:
         병합된 검색 결과
@@ -162,11 +165,14 @@ def hybrid_search(
             logger.warning("벡터 검색과 키워드 검색 결과가 모두 비어있음")
             return []
         
+        # 동적 가중치 조정: 보험사명이 명확히 추출된 경우 키워드 검색 가중치 증가
+        adjusted_alpha = _calculate_dynamic_alpha(alpha, target_insurers, query)
+        
         # 병합 수행
         merged = _merge_by_docpage(
             vector_results, 
             keyword_results, 
-            alpha=alpha,
+            alpha=adjusted_alpha,
             norm_method=norm_method
         )
         
@@ -174,7 +180,7 @@ def hybrid_search(
         result = merged[:k]
         
         # 로깅
-        logger.debug(f"하이브리드 검색 완료: {len(result)}개 결과 (벡터: {len(vector_results)}, 키워드: {len(keyword_results)})")
+        logger.debug(f"하이브리드 검색 완료: {len(result)}개 결과 (벡터: {len(vector_results)}, 키워드: {len(keyword_results)}, alpha: {adjusted_alpha:.2f})")
         
         return result
         
@@ -184,3 +190,33 @@ def hybrid_search(
         all_results = vector_results + keyword_results
         all_results.sort(key=lambda x: x.get("score", 0.0), reverse=True)
         return all_results[:k]
+
+def _calculate_dynamic_alpha(base_alpha: float, target_insurers: List[str], query: str) -> float:
+    """
+    보험사명 추출 여부에 따라 동적으로 가중치를 조정합니다.
+    
+    Args:
+        base_alpha: 기본 벡터 가중치
+        target_insurers: 타겟 보험사명 리스트
+        query: 검색 쿼리
+        
+    Returns:
+        조정된 가중치
+    """
+    if not target_insurers:
+        return base_alpha
+    
+    # 보험사명이 명확히 추출된 경우 키워드 검색 가중치 증가
+    # 벡터 가중치를 0.4로 감소, 키워드 가중치를 0.6으로 증가
+    adjusted_alpha = 0.4
+    
+    # 쿼리에 보험사명이 직접 포함된 경우 더 강한 조정
+    query_lower = query.lower()
+    for insurer in target_insurers:
+        if insurer.lower() in query_lower:
+            adjusted_alpha = 0.3  # 더 강한 키워드 검색 가중치
+            break
+    
+    logger.debug(f"동적 가중치 조정: base_alpha={base_alpha:.2f} -> adjusted_alpha={adjusted_alpha:.2f} (보험사: {target_insurers})")
+    
+    return adjusted_alpha

@@ -15,7 +15,7 @@ from app.deps import get_settings
 
 def _extract_insurers_from_question(question: str) -> List[str]:
     """
-    질문에서 보험사명을 추출합니다.
+    질문에서 보험사명을 추출합니다. 컨텍스트를 고려한 정확한 매핑을 수행합니다.
     
     Args:
         question: 사용자 질문
@@ -29,21 +29,72 @@ def _extract_insurers_from_question(question: str) -> List[str]:
     question_lower = question.lower()
     insurers = []
     
-    # 보험사명 매핑 테이블 (키워드 -> 표준 보험사명)
+    # 개선된 보험사명 매핑 테이블 (컨텍스트 기반)
     insurer_mapping = {
-        "카카오페이": ["카카오페이", "카카오", "kakao"],
-        "현대해상": ["현대해상", "현대", "hyundai"],
-        "db손해보험": ["db손해보험", "db손보", "db", "db손해"],
-        "kb손해보험": ["kb손해보험", "kb손보", "kb", "kb손해"],
-        "삼성화재": ["삼성화재", "삼성", "samsung"],
-        "현대해상": ["현대해상", "현대", "hyundai"]
+        "카카오페이": {
+            "exact": ["카카오페이", "카카오페이보험"],
+            "partial": ["카카오"],
+            "context": ["카카오페이", "카카오"]
+        },
+        "현대해상": {
+            "exact": ["현대해상", "현대해상보험"],
+            "partial": ["현대"],
+            "context": ["현대해상", "현대"]
+        },
+        "db손해보험": {
+            "exact": ["db손해보험", "db손보", "db손해보험"],
+            "partial": ["db"],
+            "context": ["db손해보험", "db손보", "db"]
+        },
+        "kb손해보험": {
+            "exact": ["kb손해보험", "kb손보", "kb손해보험"],
+            "partial": ["kb"],
+            "context": ["kb손해보험", "kb손보", "kb"]
+        },
+        "삼성화재": {
+            "exact": ["삼성화재", "삼성화재보험"],
+            "partial": ["삼성"],
+            "context": ["삼성화재", "삼성"]
+        }
     }
     
-    # 질문에서 보험사명 검색
-    for standard_name, keywords in insurer_mapping.items():
-        if any(keyword in question_lower for keyword in keywords):
-            if standard_name not in insurers:  # 중복 방지
-                insurers.append(standard_name)
+    # 1단계: 정확한 매칭 우선 검색
+    for standard_name, patterns in insurer_mapping.items():
+        for exact_pattern in patterns["exact"]:
+            if exact_pattern in question_lower:
+                if standard_name not in insurers:
+                    insurers.append(standard_name)
+                    break
+    
+    # 2단계: 컨텍스트 기반 부분 매칭 (보험 관련 키워드와 함께 사용된 경우)
+    if not insurers:  # 정확한 매칭이 없을 때만 부분 매칭 수행
+        insurance_context_keywords = ["보험", "여행자보험", "여행보험", "보장", "약관", "상품"]
+        
+        for standard_name, patterns in insurer_mapping.items():
+            for partial_pattern in patterns["partial"]:
+                if partial_pattern in question_lower:
+                    # 보험 관련 컨텍스트 확인
+                    has_insurance_context = any(
+                        context_kw in question_lower for context_kw in insurance_context_keywords
+                    )
+                    
+                    if has_insurance_context and standard_name not in insurers:
+                        insurers.append(standard_name)
+                        break
+    
+    # 3단계: 질문 패턴 기반 추론 (예: "DB 여행자 보험" -> "DB손해보험")
+    if not insurers:
+        question_words = question_lower.split()
+        for i, word in enumerate(question_words):
+            if word in ["db", "kb"]:
+                # 다음 단어가 보험 관련인지 확인
+                if i + 1 < len(question_words):
+                    next_word = question_words[i + 1]
+                    if any(insurance_kw in next_word for insurance_kw in ["보험", "여행자", "여행"]):
+                        if word == "db" and "db손해보험" not in insurers:
+                            insurers.append("db손해보험")
+                        elif word == "kb" and "kb손해보험" not in insurers:
+                            insurers.append("kb손해보험")
     
     return insurers
 
@@ -193,7 +244,8 @@ def search_node(state: Dict[str, Any]) -> Dict[str, Any]:
             vec_results, 
             kw_results, 
             web_passages,
-            k=k * 10  # rank_filter에서 리랭크할 수 있도록 10배 확장
+            k=k * 10,  # rank_filter에서 리랭크할 수 있도록 10배 확장
+            target_insurers=target_insurers  # 보험사명 정보 전달
         )
         
         # 보험사별 가중치 적용
@@ -438,7 +490,8 @@ def _enhanced_hybrid_search_with_web_weight(
     vector_results: List[Dict[str, Any]],
     keyword_results: List[Dict[str, Any]],
     web_passages: List[Dict[str, Any]],
-    k: int = 5
+    k: int = 5,
+    target_insurers: List[str] = None
 ) -> List[Dict[str, Any]]:
     """
     웹 컨텍스트 가중치를 반영한 향상된 하이브리드 검색을 수행합니다.
@@ -449,12 +502,13 @@ def _enhanced_hybrid_search_with_web_weight(
         keyword_results: 키워드 검색 결과
         web_passages: 웹 패시지
         k: 반환할 결과 수
+        target_insurers: 타겟 보험사명 리스트
         
     Returns:
         웹 가중치가 반영된 통합 검색 결과
     """
-    # 기본 하이브리드 검색 수행 - 리랭크를 위한 대량 후보
-    merged = hybrid_search(query, vector_results, keyword_results, k=k*3)  # 더 많은 후보 확보
+    # 기본 하이브리드 검색 수행 - 리랭크를 위한 대량 후보 (동적 가중치 적용)
+    merged = hybrid_search(query, vector_results, keyword_results, k=k*3, target_insurers=target_insurers)  # 더 많은 후보 확보
     
     # 웹 패시지 추가
     all_results = merged + web_passages

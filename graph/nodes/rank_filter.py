@@ -20,7 +20,7 @@ def _dedup(passages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
 
 def _extract_insurers_from_question(question: str) -> List[str]:
     """
-    질문에서 보험사명을 추출합니다.
+    질문에서 보험사명을 추출합니다. 컨텍스트를 고려한 정확한 매핑을 수행합니다.
     """
     if not question:
         return []
@@ -28,19 +28,72 @@ def _extract_insurers_from_question(question: str) -> List[str]:
     question_lower = question.lower()
     insurers = []
     
-    # 보험사명 매핑 테이블
+    # 개선된 보험사명 매핑 테이블 (컨텍스트 기반)
     insurer_mapping = {
-        "카카오페이": ["카카오페이", "카카오", "kakao"],
-        "현대해상": ["현대해상", "현대", "hyundai"],
-        "db손해보험": ["db손해보험", "db손보", "db", "db손해"],
-        "kb손해보험": ["kb손해보험", "kb손보", "kb", "kb손해"],
-        "삼성화재": ["삼성화재", "삼성", "samsung"]
+        "카카오페이": {
+            "exact": ["카카오페이", "카카오페이보험"],
+            "partial": ["카카오"],
+            "context": ["카카오페이", "카카오"]
+        },
+        "현대해상": {
+            "exact": ["현대해상", "현대해상보험"],
+            "partial": ["현대"],
+            "context": ["현대해상", "현대"]
+        },
+        "db손해보험": {
+            "exact": ["db손해보험", "db손보", "db손해보험"],
+            "partial": ["db"],
+            "context": ["db손해보험", "db손보", "db"]
+        },
+        "kb손해보험": {
+            "exact": ["kb손해보험", "kb손보", "kb손해보험"],
+            "partial": ["kb"],
+            "context": ["kb손해보험", "kb손보", "kb"]
+        },
+        "삼성화재": {
+            "exact": ["삼성화재", "삼성화재보험"],
+            "partial": ["삼성"],
+            "context": ["삼성화재", "삼성"]
+        }
     }
     
-    for standard_name, keywords in insurer_mapping.items():
-        if any(keyword in question_lower for keyword in keywords):
-            if standard_name not in insurers:
-                insurers.append(standard_name)
+    # 1단계: 정확한 매칭 우선 검색
+    for standard_name, patterns in insurer_mapping.items():
+        for exact_pattern in patterns["exact"]:
+            if exact_pattern in question_lower:
+                if standard_name not in insurers:
+                    insurers.append(standard_name)
+                    break
+    
+    # 2단계: 컨텍스트 기반 부분 매칭 (보험 관련 키워드와 함께 사용된 경우)
+    if not insurers:  # 정확한 매칭이 없을 때만 부분 매칭 수행
+        insurance_context_keywords = ["보험", "여행자보험", "여행보험", "보장", "약관", "상품"]
+        
+        for standard_name, patterns in insurer_mapping.items():
+            for partial_pattern in patterns["partial"]:
+                if partial_pattern in question_lower:
+                    # 보험 관련 컨텍스트 확인
+                    has_insurance_context = any(
+                        context_kw in question_lower for context_kw in insurance_context_keywords
+                    )
+                    
+                    if has_insurance_context and standard_name not in insurers:
+                        insurers.append(standard_name)
+                        break
+    
+    # 3단계: 질문 패턴 기반 추론 (예: "DB 여행자 보험" -> "DB손해보험")
+    if not insurers:
+        question_words = question_lower.split()
+        for i, word in enumerate(question_words):
+            if word in ["db", "kb"]:
+                # 다음 단어가 보험 관련인지 확인
+                if i + 1 < len(question_words):
+                    next_word = question_words[i + 1]
+                    if any(insurance_kw in next_word for insurance_kw in ["보험", "여행자", "여행"]):
+                        if word == "db" and "db손해보험" not in insurers:
+                            insurers.append("db손해보험")
+                        elif word == "kb" and "kb손해보험" not in insurers:
+                            insurers.append("kb손해보험")
     
     return insurers
 
@@ -88,23 +141,47 @@ def _rerank_with_advanced_scoring(passages: List[Dict[str, Any]], question: str)
         insurance_keywords = ["보험", "보장", "보상", "손해", "위험", "보험료", "보험금", "보험사"]
         insurance_bonus = sum(1 for kw in insurance_keywords if kw in text) * 0.1
         
-        # 보험사별 우선순위 가중치
+        # 보험사별 우선순위 가중치 (강화된 로직)
         insurer_boost = 0.0
+        insurer_match_quality = 0.0
+        
         if target_insurers and insurer:
+            # 정확한 보험사명 매칭 확인
             is_target_insurer = any(
                 target_insurer.lower() in insurer or insurer in target_insurer.lower()
                 for target_insurer in target_insurers
             )
+            
             if is_target_insurer:
-                insurer_boost = 0.3  # 타겟 보험사 문서에 30% 가중치
+                # 기본 보험사 부스트
+                insurer_boost = 0.4  # 30% -> 40%로 증가
+                
+                # 보험사명 매칭 품질 점수 (정확한 매칭에 더 높은 점수)
+                for target_insurer in target_insurers:
+                    if target_insurer.lower() == insurer.lower():
+                        insurer_match_quality = 0.2  # 정확한 매칭
+                        break
+                    elif target_insurer.lower() in insurer.lower() or insurer.lower() in target_insurer.lower():
+                        insurer_match_quality = 0.1  # 부분 매칭
+                        break
         
-        # 최종 점수 계산
+        # 질문에서 보험사명이 직접 언급된 경우 추가 가중치
+        direct_mention_bonus = 0.0
+        if target_insurers:
+            for target_insurer in target_insurers:
+                if target_insurer.lower() in question_lower:
+                    direct_mention_bonus = 0.15  # 직접 언급 보너스
+                    break
+        
+        # 최종 점수 계산 (보험사명 매칭 가중치 강화)
         final_score = (
-            base_score * 0.5 +           # 기본 검색 점수 (가중치 감소)
-            keyword_score * 0.25 +       # 키워드 매칭
+            base_score * 0.4 +           # 기본 검색 점수 (가중치 감소: 0.5 -> 0.4)
+            keyword_score * 0.2 +        # 키워드 매칭 (가중치 감소: 0.25 -> 0.2)
             quality_score * 0.1 +        # 문서 품질
             insurance_bonus +            # 보험 전문성 보너스
-            insurer_boost                # 보험사 우선순위 가중치
+            insurer_boost +              # 보험사 우선순위 가중치
+            insurer_match_quality +      # 보험사명 매칭 품질 점수
+            direct_mention_bonus         # 직접 언급 보너스
         )
         
         # 점수 업데이트
@@ -114,14 +191,26 @@ def _rerank_with_advanced_scoring(passages: List[Dict[str, Any]], question: str)
         passage_copy["keyword_matches"] = text_matches + title_matches
         passage_copy["insurer_boost"] = insurer_boost > 0
         passage_copy["target_insurer"] = insurer_boost > 0
+        passage_copy["insurer_match_quality"] = insurer_match_quality
+        passage_copy["direct_mention_bonus"] = direct_mention_bonus
+        passage_copy["score_breakdown"] = {
+            "base_score": base_score * 0.4,
+            "keyword_score": keyword_score * 0.2,
+            "quality_score": quality_score * 0.1,
+            "insurance_bonus": insurance_bonus,
+            "insurer_boost": insurer_boost,
+            "insurer_match_quality": insurer_match_quality,
+            "direct_mention_bonus": direct_mention_bonus
+        }
         reranked.append(passage_copy)
     
     return reranked
 
 def _apply_mmr(passages: List[Dict[str, Any]], question: str, lambda_param: float = 0.7) -> List[Dict[str, Any]]:
     """
-    MMR (Maximal Marginal Relevance) 적용
+    MMR (Maximal Marginal Relevance) 적용 - 보험사별 그룹핑 고려
     - 관련성과 다양성의 균형
+    - 보험사별 문서 그룹핑을 고려한 다양성 확보
     - 중복 내용 제거
     """
     if not passages:
@@ -130,6 +219,14 @@ def _apply_mmr(passages: List[Dict[str, Any]], question: str, lambda_param: floa
     # 점수 기준 정렬
     passages.sort(key=lambda x: x.get("score", 0.0), reverse=True)
     
+    # 보험사별 그룹핑
+    insurer_groups = {}
+    for passage in passages:
+        insurer = passage.get("insurer", "unknown").lower()
+        if insurer not in insurer_groups:
+            insurer_groups[insurer] = []
+        insurer_groups[insurer].append(passage)
+    
     selected = []
     remaining = passages.copy()
     
@@ -137,7 +234,12 @@ def _apply_mmr(passages: List[Dict[str, Any]], question: str, lambda_param: floa
     if remaining:
         selected.append(remaining.pop(0))
     
-    # MMR 알고리즘 적용
+    # 보험사별 그룹 통계
+    selected_insurers = set()
+    if selected:
+        selected_insurers.add(selected[0].get("insurer", "unknown").lower())
+    
+    # MMR 알고리즘 적용 (보험사별 그룹핑 고려)
     while remaining and len(selected) < 5:  # 최대 5개 선택
         best_idx = 0
         best_mmr_score = -1
@@ -146,21 +248,44 @@ def _apply_mmr(passages: List[Dict[str, Any]], question: str, lambda_param: floa
             # 관련성 점수
             relevance_score = candidate.get("score", 0.0)
             
+            # 보험사별 다양성 보너스
+            candidate_insurer = candidate.get("insurer", "unknown").lower()
+            insurer_diversity_bonus = 0.0
+            
+            # 새로운 보험사인 경우 다양성 보너스
+            if candidate_insurer not in selected_insurers:
+                insurer_diversity_bonus = 0.1  # 보험사 다양성 보너스
+            
             # 다양성 점수 (이미 선택된 문서들과의 유사도)
             max_similarity = 0.0
             for selected_doc in selected:
                 similarity = _calculate_similarity(candidate, selected_doc)
                 max_similarity = max(max_similarity, similarity)
             
-            # MMR 점수 계산
-            mmr_score = lambda_param * relevance_score - (1 - lambda_param) * max_similarity
+            # 보험사별 그룹 내 유사도 계산
+            same_insurer_similarity = 0.0
+            if candidate_insurer in insurer_groups:
+                for doc in insurer_groups[candidate_insurer]:
+                    if doc in selected:
+                        similarity = _calculate_similarity(candidate, doc)
+                        same_insurer_similarity = max(same_insurer_similarity, similarity)
+            
+            # MMR 점수 계산 (보험사별 그룹핑 고려)
+            # 같은 보험사 내에서는 유사도 패널티를 줄임
+            adjusted_similarity = max_similarity * 0.7 + same_insurer_similarity * 0.3
+            mmr_score = lambda_param * relevance_score - (1 - lambda_param) * adjusted_similarity + insurer_diversity_bonus
             
             if mmr_score > best_mmr_score:
                 best_mmr_score = mmr_score
                 best_idx = i
         
         # 최적 문서 선택
-        selected.append(remaining.pop(best_idx))
+        chosen_doc = remaining.pop(best_idx)
+        selected.append(chosen_doc)
+        
+        # 선택된 보험사 업데이트
+        chosen_insurer = chosen_doc.get("insurer", "unknown").lower()
+        selected_insurers.add(chosen_insurer)
     
     return selected
 
@@ -227,8 +352,10 @@ def rank_filter_node(state: Dict[str, Any]) -> Dict[str, Any]:
     logger.info(f"전통적 리랭크 사용: {len(deduped)}개 후보")
     reranked = _rerank_with_advanced_scoring(deduped, question)
     
-    # 3. MMR 적용 (다양성 확보)
-    diverse = _apply_mmr(reranked, question, lambda_param=0.7)
+    # 3. MMR 적용 (다양성 확보) - 보험사명 추출 여부에 따른 동적 조정
+    target_insurers = _extract_insurers_from_question(question)
+    lambda_param = 0.8 if target_insurers else 0.7  # 보험사명이 있으면 관련성 중시
+    diverse = _apply_mmr(reranked, question, lambda_param=lambda_param)
     
     # 4. 품질 필터링
     filtered = _quality_filter(diverse)

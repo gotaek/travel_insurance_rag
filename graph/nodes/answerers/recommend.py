@@ -38,6 +38,57 @@ def _format_web_results(web_results: list) -> str:
     
     return "\n".join(web_parts)
 
+def _parse_llm_response_fallback(llm, prompt: str) -> Dict[str, Any]:
+    """structured output 실패 시 일반 LLM 호출로 fallback"""
+    try:
+        print("🔄 Recommend 노드 fallback 파싱 시도...")
+        response = llm.generate_content(prompt, request_options={"timeout": 45})
+        response_text = response.text
+        
+        # JSON 부분 추출 시도
+        import json
+        import re
+        
+        # JSON 패턴 찾기
+        json_pattern = r'\{.*\}'
+        json_match = re.search(json_pattern, response_text, re.DOTALL)
+        
+        if json_match:
+            json_str = json_match.group()
+            try:
+                parsed = json.loads(json_str)
+                return {
+                    "conclusion": parsed.get("conclusion", "추천을 생성했습니다."),
+                    "evidence": parsed.get("evidence", []),
+                    "caveats": parsed.get("caveats", []),
+                    "quotes": parsed.get("quotes", []),
+                    "recommendations": parsed.get("recommendations", []),
+                    "web_info": parsed.get("web_info", {})
+                }
+            except json.JSONDecodeError:
+                pass
+        
+        # JSON 파싱 실패 시 텍스트에서 정보 추출
+        return {
+            "conclusion": response_text[:500] if response_text else "추천을 생성했습니다.",
+            "evidence": ["Fallback 파싱으로 생성된 답변"],
+            "caveats": ["원본 structured output이 실패하여 일반 파싱을 사용했습니다."],
+            "quotes": [],
+            "recommendations": [],
+            "web_info": {}
+        }
+        
+    except Exception as fallback_error:
+        print(f"❌ Recommend 노드 fallback도 실패: {str(fallback_error)}")
+        return {
+            "conclusion": "답변을 생성하는 중 오류가 발생했습니다.",
+            "evidence": [f"Fallback 파싱도 실패: {str(fallback_error)[:100]}"],
+            "caveats": [f"상세 오류: {str(fallback_error)}", "추가 확인이 필요합니다."],
+            "quotes": [],
+            "recommendations": [],
+            "web_info": {}
+        }
+
 def _parse_llm_response_structured(llm, prompt: str) -> Dict[str, Any]:
     """LLM 응답을 structured output으로 파싱"""
     try:
@@ -55,14 +106,37 @@ def _parse_llm_response_structured(llm, prompt: str) -> Dict[str, Any]:
         }
     except Exception as e:
         # structured output 실패 시 기본 구조로 fallback
-        return {
-            "conclusion": "답변을 생성하는 중 오류가 발생했습니다.",
-            "evidence": ["응답 파싱 오류"],
-            "caveats": ["추가 확인이 필요합니다."],
-            "quotes": [],
-            "recommendations": [],
-            "web_info": {}
-        }
+        error_str = str(e).lower()
+        print(f"❌ Recommend 노드 structured output 실패: {str(e)}")
+        
+        if "quota" in error_str or "limit" in error_str or "429" in error_str or "exceeded" in error_str:
+            return {
+                "conclusion": "죄송합니다. 현재 API 할당량이 초과되어 답변을 생성할 수 없습니다.",
+                "evidence": ["Gemini API 일일 할당량 초과"],
+                "caveats": [
+                    "잠시 후 다시 시도해주세요.",
+                    "API 할당량이 복구되면 정상적으로 답변을 제공할 수 있습니다.",
+                    "오류 코드: 429 (Quota Exceeded)"
+                ],
+                "quotes": [],
+                "recommendations": [],
+                "web_info": {}
+            }
+        elif "404" in error_str or "publisher" in error_str or "model" in error_str:
+            return {
+                "conclusion": "모델 설정 오류로 인해 답변을 생성할 수 없습니다.",
+                "evidence": ["Gemini 모델 설정 오류"],
+                "caveats": [
+                    "모델 이름을 확인해주세요.",
+                    "잠시 후 다시 시도해주세요."
+                ],
+                "quotes": [],
+                "recommendations": [],
+                "web_info": {}
+            }
+        else:
+            # structured output 실패 시 fallback 파싱 시도
+            return _parse_llm_response_fallback(llm, prompt)
 
 def recommend_node(state: Dict[str, Any]) -> Dict[str, Any]:
     """

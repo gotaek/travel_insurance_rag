@@ -41,16 +41,49 @@ def _parse_llm_response_structured(llm, prompt: str) -> Dict[str, Any]:
         }
     except Exception as e:
         # structured output 실패 시 기본 구조로 fallback
-        return {
-            "conclusion": "답변을 생성하는 중 오류가 발생했습니다.",
-            "evidence": ["응답 파싱 오류"],
-            "caveats": ["추가 확인이 필요합니다."],
-            "quotes": [],
-            "comparison_table": {
-                "headers": ["항목", "비교 결과"],
-                "rows": [["오류", "파싱 실패"]]
+        error_str = str(e).lower()
+        print(f"❌ Compare 노드 structured output 실패: {str(e)}")
+        
+        if "quota" in error_str or "limit" in error_str or "429" in error_str or "exceeded" in error_str:
+            return {
+                "conclusion": "죄송합니다. 현재 API 할당량이 초과되어 답변을 생성할 수 없습니다.",
+                "evidence": ["Gemini API 일일 할당량 초과"],
+                "caveats": [
+                    "잠시 후 다시 시도해주세요.",
+                    "API 할당량이 복구되면 정상적으로 답변을 제공할 수 있습니다.",
+                    "오류 코드: 429 (Quota Exceeded)"
+                ],
+                "quotes": [],
+                "comparison_table": {
+                    "headers": ["항목", "비교 결과"],
+                    "rows": [["API 할당량 초과", "서비스 일시 중단 (429)"]]
+                }
             }
-        }
+        elif "404" in error_str or "publisher" in error_str or "model" in error_str:
+            return {
+                "conclusion": "모델 설정 오류로 인해 답변을 생성할 수 없습니다.",
+                "evidence": ["Gemini 모델 설정 오류"],
+                "caveats": [
+                    "모델 이름을 확인해주세요.",
+                    "잠시 후 다시 시도해주세요."
+                ],
+                "quotes": [],
+                "comparison_table": {
+                    "headers": ["항목", "비교 결과"],
+                    "rows": [["모델 오류", "설정 확인 필요 (404)"]]
+                }
+            }
+        else:
+            return {
+                "conclusion": "답변을 생성하는 중 오류가 발생했습니다.",
+                "evidence": [f"응답 파싱 오류: {str(e)[:100]}"],
+                "caveats": [f"상세 오류: {str(e)}", "추가 확인이 필요합니다."],
+                "quotes": [],
+                "comparison_table": {
+                    "headers": ["항목", "비교 결과"],
+                    "rows": [["오류", f"파싱 실패: {str(e)[:50]}"]]
+                }
+            }
 
 def compare_node(state: Dict[str, Any]) -> Dict[str, Any]:
     """
