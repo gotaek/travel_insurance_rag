@@ -2,7 +2,6 @@ from typing import Dict, Any
 import json
 from pathlib import Path
 from app.deps import get_llm
-from app.langsmith_llm import get_llm_with_tracing
 from graph.models import RecommendResponse
 
 def _load_prompt(prompt_name: str) -> str:
@@ -101,7 +100,7 @@ def recommend_node(state: Dict[str, Any]) -> Dict[str, Any]:
     
     try:
         # LLM 호출
-        llm = get_llm_with_tracing()
+        llm = get_llm()
         
         # structured output 사용
         answer = _parse_llm_response_structured(llm, full_prompt)

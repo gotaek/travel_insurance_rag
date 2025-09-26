@@ -2,7 +2,6 @@ from typing import Dict, Any, List
 import json
 import logging
 from app.deps import get_llm
-from app.langsmith_llm import get_llm_with_tracing
 from graph.models import QualityEvaluationResponse
 
 # 로깅 설정
@@ -129,7 +128,7 @@ def _evaluate_answer_quality(question: str, answer: str, citations: List[Dict[st
 
     try:
         logger.debug("LLM을 사용한 품질 평가 시작 (structured output)")
-        llm = get_llm_with_tracing()
+        llm = get_llm()
         
         # structured output 사용
         structured_llm = llm.with_structured_output(QualityEvaluationResponse)

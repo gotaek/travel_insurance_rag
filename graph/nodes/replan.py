@@ -2,7 +2,6 @@ from typing import Dict, Any
 import json
 import logging
 from app.deps import get_llm
-from app.langsmith_llm import get_llm_with_tracing
 from graph.models import ReplanResponse
 
 # 로깅 설정
@@ -74,7 +73,7 @@ def _generate_replan_query(original_question: str, feedback: str, suggested_quer
 
     try:
         logger.debug("LLM을 사용한 재검색 질문 생성 시작 (structured output)")
-        llm = get_llm_with_tracing()
+        llm = get_llm()
         
         # structured output 사용
         structured_llm = llm.with_structured_output(ReplanResponse)

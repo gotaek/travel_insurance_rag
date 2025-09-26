@@ -3,7 +3,6 @@ import json
 import re
 import logging
 from app.deps import get_llm
-from app.langsmith_llm import get_llm_with_tracing
 from graph.models import PlannerResponse
 
 # 로깅 설정
@@ -35,7 +34,7 @@ def _llm_classify_intent(question: str) -> Dict[str, Any]:
 
     try:
         logger.debug("LLM을 사용한 의도 분류 시작 (structured output)")
-        llm = get_llm_with_tracing()
+        llm = get_llm()
         
         # structured output 사용
         structured_llm = llm.with_structured_output(PlannerResponse)

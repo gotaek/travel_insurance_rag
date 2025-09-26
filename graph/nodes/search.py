@@ -47,6 +47,7 @@ def _extract_insurers_from_question(question: str) -> List[str]:
     
     return insurers
 
+
 def _enhance_query_with_insurers(question: str, target_insurers: List[str]) -> str:
     """
     보험사명을 포함한 검색 쿼리를 확장합니다.
@@ -66,6 +67,7 @@ def _enhance_query_with_insurers(question: str, target_insurers: List[str]) -> s
     enhanced_query = f"{question} {insurer_terms}"
     
     return enhanced_query
+
 
 def _boost_insurer_documents(passages: List[Dict[str, Any]], target_insurers: List[str]) -> List[Dict[str, Any]]:
     """

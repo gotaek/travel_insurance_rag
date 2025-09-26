@@ -91,12 +91,28 @@ class LangSmithManager:
             return
         
         try:
-            self.client.update_run(
-                run_id=run_id,
-                outputs=outputs,
-                error=error,
+            # run 완료를 명시적으로 표시
+            update_data = {
+                "run_id": run_id,
+                "outputs": outputs,
+                "error": error,
                 **kwargs
-            )
+            }
+            
+            # 완료 상태 추가
+            if "extra" not in update_data:
+                update_data["extra"] = {}
+            if "metadata" not in update_data["extra"]:
+                update_data["extra"]["metadata"] = {}
+            
+            # 완료 상태 설정
+            if error:
+                update_data["extra"]["metadata"]["status"] = "failed"
+            else:
+                update_data["extra"]["metadata"]["status"] = "completed"
+            
+            self.client.update_run(**update_data)
+            print(f"✅ LangSmith run 업데이트 완료: {run_id}")
         except Exception as e:
             print(f"⚠️ LangSmith 실행 업데이트 실패: {str(e)}")
 

@@ -15,6 +15,9 @@ except Exception:
 from sklearn.feature_extraction.text import TfidfVectorizer
 from retriever.embeddings import embed_texts
 
+# LangChain text splitters 추가
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+
 DOC_DIR = os.getenv("DOCUMENT_DIR", "data/documents")
 OUT_DIR = os.getenv("VECTOR_DIR", "data/vector_db")
 CHUNK_SIZE = int(os.getenv("CHUNK_SIZE", "800"))
@@ -53,16 +56,291 @@ def _section_type_by_heading(text: str) -> str:
     if "별표" in text[:20] or "부록" in text[:20]: return "appendix"
     return "body"
 
-def _chunk_text(txt: str, size: int, overlap: int) -> List[str]:
-    if len(txt) <= size:
-        return [txt]
-    chunks = []
+def _merge_small_blocks(blocks: List[Dict[str, Any]], min_size: int = 700) -> List[Dict[str, Any]]:
+    """
+    작은 블록들을 병합하여 의미 있는 텍스트 생성 (개선된 버전)
+    
+    Args:
+        blocks: PDF에서 추출된 블록 리스트
+        min_size: 최소 블록 크기 (문자 수) - 700자로 증가
+        
+    Returns:
+        병합된 블록 리스트
+    """
+    if not blocks:
+        return []
+    
+    merged_blocks = []
+    current_block = None
+    current_text = ""
+    
+    for block in blocks:
+        block_text = block["text"].strip()
+        
+        # 빈 텍스트는 건너뛰기
+        if not block_text:
+            continue
+            
+        # 현재 블록이 없으면 새로 시작
+        if current_block is None:
+            current_block = dict(block)
+            current_text = block_text
+        else:
+            # 현재 텍스트와 합쳤을 때 최소 크기 미만이면 병합
+            if len(current_text) + len(block_text) < min_size * 1.5:  # 1.5배로 제한 완화
+                current_text += "\n" + block_text
+            else:
+                # 현재까지의 텍스트를 블록으로 저장
+                current_block["text"] = current_text
+                merged_blocks.append(current_block)
+                
+                # 새 블록 시작
+                current_block = dict(block)
+                current_text = block_text
+    
+    # 마지막 블록 처리
+    if current_block and current_text:
+        current_block["text"] = current_text
+        merged_blocks.append(current_block)
+    
+    # 🔧 개선: 최종 검증 - 너무 작은 블록은 다음 블록과 강제 병합
+    final_blocks = []
     i = 0
-    while i < len(txt):
-        chunks.append(txt[i:i+size])
-        i += max(1, size - overlap)
-        if i >= len(txt):
-            break
+    while i < len(merged_blocks):
+        current_block = merged_blocks[i]
+        current_text = current_block["text"]
+        
+        if len(current_text) < min_size and i + 1 < len(merged_blocks):
+            # 다음 블록과 강제 병합
+            next_block = merged_blocks[i + 1]
+            merged_text = current_text + "\n" + next_block["text"]
+            
+            # 병합된 블록이 너무 크면 분할
+            if len(merged_text) > min_size * 2:
+                # 중간점에서 분할
+                mid_point = len(merged_text) // 2
+                # 문장 경계에서 분할점 찾기
+                for offset in range(0, len(merged_text) // 4):
+                    if mid_point - offset > 0:
+                        if merged_text[mid_point - offset:mid_point - offset + 2] == '. ':
+                            mid_point = mid_point - offset + 2
+                            break
+                    if mid_point + offset < len(merged_text):
+                        if merged_text[mid_point + offset:mid_point + offset + 2] == '. ':
+                            mid_point = mid_point + offset + 2
+                            break
+                
+                # 분할 실행
+                if mid_point > 0 and mid_point < len(merged_text):
+                    final_blocks.append({
+                        **current_block,
+                        "text": merged_text[:mid_point]
+                    })
+                    final_blocks.append({
+                        **next_block,
+                        "text": merged_text[mid_point:]
+                    })
+                else:
+                    final_blocks.append({
+                        **current_block,
+                        "text": merged_text
+                    })
+            else:
+                final_blocks.append({
+                    **current_block,
+                    "text": merged_text
+                })
+            i += 2  # 두 블록을 처리했으므로 2 증가
+        else:
+            final_blocks.append(current_block)
+            i += 1
+    
+    return final_blocks
+
+def _create_recursive_text_splitter(chunk_size: int, chunk_overlap: int) -> RecursiveCharacterTextSplitter:
+    """
+    한국어에 최적화된 Recursive Text Splitter 생성
+    
+    Args:
+        chunk_size: 청크 크기
+        chunk_overlap: 청크 오버랩
+        
+    Returns:
+        RecursiveCharacterTextSplitter 인스턴스
+    """
+    # 한국어에 최적화된 구분자 설정
+    separators = [
+        "\n\n",      # 문단 구분
+        "\n",        # 줄 구분  
+        ". ",        # 문장 구분
+        "。",        # 한국어 문장 구분
+        " ",         # 단어 구분
+        ""           # 문자 구분
+    ]
+    
+    return RecursiveCharacterTextSplitter(
+        chunk_size=chunk_size,
+        chunk_overlap=chunk_overlap,
+        separators=separators,
+        length_function=len,
+        is_separator_regex=False
+    )
+
+def _uniform_chunking_with_recursive_splitter(txt: str, target_size: int, overlap: int, tolerance: float = 0.15) -> List[str]:
+    """
+    RecursiveCharacterTextSplitter와 후처리를 결합한 균등 청킹 (개선된 버전)
+    
+    Args:
+        txt: 청킹할 텍스트
+        target_size: 목표 청크 크기
+        overlap: 청크 오버랩
+        tolerance: 허용 오차 (0.15 = 15%)
+        
+    Returns:
+        균등한 크기의 청크 리스트
+    """
+    if len(txt) <= target_size:
+        return [txt]
+    
+    # 🔧 개선: 최소 크기 보장 로직 추가
+    if len(txt) < target_size * 0.8:  # 80% 미만이면
+        # 작은 텍스트는 그대로 반환하지 말고 강제 분할 시도
+        if len(txt) < target_size * 0.5:  # 50% 미만이면
+            return [txt]  # 너무 작으면 그대로 반환
+        else:
+            # 50-80% 범위면 강제로 목표 크기에 맞춰 분할
+            return _force_chunk_to_target_size(txt, target_size, overlap)
+    
+    # 1단계: RecursiveCharacterTextSplitter로 의미 단위 분할
+    text_splitter = _create_recursive_text_splitter(target_size, overlap)
+    initial_chunks = text_splitter.split_text(txt)
+    
+    # 2단계: 청크 크기 균등화
+    min_size = int(target_size * (1 - tolerance))
+    max_size = int(target_size * (1 + tolerance))
+    
+    balanced_chunks = []
+    i = 0
+    
+    while i < len(initial_chunks):
+        current_chunk = initial_chunks[i]
+        chunk_len = len(current_chunk)
+        
+        if min_size <= chunk_len <= max_size:
+            # 적절한 크기의 청크는 그대로 사용
+            balanced_chunks.append(current_chunk)
+            i += 1
+        elif chunk_len < min_size:
+            # 너무 작은 청크는 다음 청크와 병합
+            if i + 1 < len(initial_chunks):
+                next_chunk = initial_chunks[i + 1]
+                merged = current_chunk + "\n" + next_chunk
+                
+                if len(merged) <= max_size:
+                    # 병합된 청크가 최대 크기 이내면 사용
+                    balanced_chunks.append(merged)
+                    i += 2
+                else:
+                    # 병합하면 너무 크면 현재 청크만 사용
+                    balanced_chunks.append(current_chunk)
+                    i += 1
+            else:
+                # 마지막 청크는 그대로 사용
+                balanced_chunks.append(current_chunk)
+                i += 1
+        else:
+            # 너무 큰 청크는 재분할
+            sub_chunks = _split_large_chunk(current_chunk, target_size, overlap)
+            balanced_chunks.extend(sub_chunks)
+            i += 1
+    
+    # 3단계: 마지막 최적화 - 너무 작은 마지막 청크 처리
+    if len(balanced_chunks) > 1 and len(balanced_chunks[-1]) < min_size:
+        # 마지막 청크를 이전 청크와 병합
+        last_chunk = balanced_chunks.pop()
+        balanced_chunks[-1] += "\n" + last_chunk
+    
+    # 🔧 개선: 최종 검증 - 목표 크기 달성 여부 확인
+    final_chunks = []
+    for chunk in balanced_chunks:
+        if len(chunk) < target_size * 0.7:  # 70% 미만이면
+            # 다음 청크와 강제 병합 시도
+            if len(final_chunks) > 0:
+                # 이전 청크와 병합
+                final_chunks[-1] += "\n" + chunk
+            else:
+                final_chunks.append(chunk)
+        else:
+            final_chunks.append(chunk)
+    
+    return final_chunks
+
+def _force_chunk_to_target_size(txt: str, target_size: int, overlap: int) -> List[str]:
+    """
+    작은 텍스트를 목표 크기에 맞춰 강제 분할
+    
+    Args:
+        txt: 분할할 텍스트
+        target_size: 목표 청크 크기
+        overlap: 청크 오버랩
+        
+    Returns:
+        강제 분할된 청크 리스트
+    """
+    if len(txt) <= target_size:
+        return [txt]
+    
+    chunks = []
+    start = 0
+    
+    while start < len(txt):
+        end = min(start + target_size, len(txt))
+        
+        # 마지막 청크가 아니면 적절한 분할점 찾기
+        if end < len(txt):
+            # 문장 경계에서 분할 시도
+            for sep in ['. ', '.\n', '\n\n', '\n']:
+                sep_pos = txt.rfind(sep, start, end)
+                if sep_pos > start + target_size * 0.7:  # 70% 이상 위치에서 발견
+                    end = sep_pos + len(sep)
+                    break
+        
+        chunk_text = txt[start:end].strip()
+        if chunk_text:
+            chunks.append(chunk_text)
+        
+        start = max(start + 1, end - overlap)
+    
+    return chunks
+
+def _split_large_chunk(chunk: str, target_size: int, overlap: int) -> List[str]:
+    """
+    큰 청크를 목표 크기로 분할
+    """
+    if len(chunk) <= target_size:
+        return [chunk]
+    
+    chunks = []
+    start = 0
+    
+    while start < len(chunk):
+        end = min(start + target_size, len(chunk))
+        
+        # 마지막 청크가 아니면 적절한 분할점 찾기
+        if end < len(chunk):
+            # 문장 경계에서 분할 시도
+            for sep in ['. ', '.\n', '\n\n', '\n']:
+                sep_pos = chunk.rfind(sep, start, end)
+                if sep_pos > start + target_size * 0.7:  # 70% 이상 위치에서 발견
+                    end = sep_pos + len(sep)
+                    break
+        
+        chunk_text = chunk[start:end].strip()
+        if chunk_text:
+            chunks.append(chunk_text)
+        
+        start = max(start + 1, end - overlap)
+    
     return chunks
 
 def _keyword_tags(docs: List[str], topk: int = 8) -> List[List[str]]:
@@ -392,6 +670,71 @@ def _filter_empty_chunks(chunks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     
     return filtered_chunks
 
+def _analyze_chunk_sizes(chunks: List[Dict[str, Any]], target_size: int = 800) -> None:
+    """청크 크기 분석 및 통계 출력 (개선된 버전)"""
+    sizes = [len(chunk["text"]) for chunk in chunks]
+    if not sizes:
+        return
+    
+    avg_size = sum(sizes) / len(sizes)
+    min_size = min(sizes)
+    max_size = max(sizes)
+    std_dev = (sum((x - avg_size) ** 2 for x in sizes) / len(sizes)) ** 0.5
+    
+    # 목표 크기 기준 통계
+    target_range_count = sum(1 for s in sizes if target_size * 0.8 <= s <= target_size * 1.2)
+    target_ratio = target_range_count / len(sizes) * 100
+    
+    # 크기 분포 분석
+    size_ranges = [
+        (0, target_size * 0.5, "매우 작음"),
+        (target_size * 0.5, target_size * 0.8, "작음"),
+        (target_size * 0.8, target_size * 1.2, "적절함"),
+        (target_size * 1.2, target_size * 1.5, "큼"),
+        (target_size * 1.5, float('inf'), "매우 큼")
+    ]
+    
+    print(f"\n📊 청크 크기 분석 (개선된 버전):")
+    print(f"  - 총 청크 수: {len(chunks)}")
+    print(f"  - 평균 크기: {avg_size:.1f}자")
+    print(f"  - 최소/최대 크기: {min_size}/{max_size}자")
+    print(f"  - 표준편차: {std_dev:.1f}자")
+    print(f"  - 목표 크기({target_size}±20%) 범위: {target_range_count}개 ({target_ratio:.1f}%)")
+    
+    print(f"\n📈 크기 분포:")
+    for start, end, label in size_ranges:
+        count = sum(1 for s in sizes if start <= s < end)
+        if count > 0:
+            ratio = count / len(sizes) * 100
+            print(f"  - {label}: {count}개 ({ratio:.1f}%)")
+    
+    # 품질 평가
+    quality_score = 0
+    if target_ratio >= 80:
+        quality_score = 5  # 우수
+    elif target_ratio >= 60:
+        quality_score = 4  # 양호
+    elif target_ratio >= 40:
+        quality_score = 3  # 보통
+    elif target_ratio >= 20:
+        quality_score = 2  # 미흡
+    else:
+        quality_score = 1  # 불량
+    
+    quality_labels = ["불량", "미흡", "보통", "양호", "우수"]
+    print(f"\n🎯 청킹 품질: {quality_labels[quality_score-1]} ({quality_score}/5)")
+    
+    # 개선 제안
+    if target_ratio < 60:
+        print(f"\n💡 개선 제안:")
+        if target_ratio < 40:
+            print(f"  - 블록 병합 임계값을 더 크게 설정 (현재: 700자)")
+            print(f"  - 최소 청크 크기 강제 적용 필요")
+        if std_dev > target_size * 0.3:
+            print(f"  - 청크 크기 일관성 개선 필요 (표준편차: {std_dev:.1f}자)")
+        if min_size < target_size * 0.5:
+            print(f"  - 너무 작은 청크들 강제 병합 필요")
+
 def main():
     pdfs = sorted([p for p in Path(DOC_DIR).glob("*.pdf")])
     if not pdfs:
@@ -402,9 +745,19 @@ def main():
     for p in tqdm(pdfs, desc="Parsing PDFs (PyMuPDF only)"):
         blocks = _blocks_from_pymupdf(p)
         labeled = _label_sections(blocks)
-        tables = _extract_tables_pymupdf(p)  # pdfplumber 대신 PyMuPDF 사용
+        tables = _extract_tables_pymupdf(p)
         merged = _merge_tables(labeled, tables)
-        all_sections.extend(merged)
+        
+        # 🔧 개선: 작은 블록 병합 적용 (700자 임계값)
+        print(f"📄 {p.name}: {len(merged)}개 블록 추출")
+        merged_blocks = _merge_small_blocks(merged, min_size=700)
+        print(f"📄 {p.name}: {len(merged_blocks)}개 블록으로 병합 (병합률: {len(merged_blocks)/len(merged)*100:.1f}%)")
+        
+        # 🔧 개선: 병합된 블록 크기 검증
+        avg_block_size = sum(len(block["text"]) for block in merged_blocks) / len(merged_blocks) if merged_blocks else 0
+        print(f"📄 {p.name}: 평균 블록 크기 {avg_block_size:.1f}자")
+        
+        all_sections.extend(merged_blocks)
 
     print(f"📄 총 {len(all_sections)}개의 섹션이 추출되었습니다.")
 
@@ -414,16 +767,20 @@ def main():
     for s, tags in zip(all_sections, section_tags):
         s["tags"] = tags
 
-    # 청킹(+메타 전개)
+    # 🔧 개선: RecursiveCharacterTextSplitter + 균등화를 사용한 일정한 크기 청크 생성
     chunks_meta: List[Dict[str, Any]] = []
-    for s in tqdm(all_sections, desc="Chunking"):
+    for s in tqdm(all_sections, desc="Uniform Chunking with Recursive Splitter"):
         # 표는 행 단위로 이미 짧은 편 → 바로 저장. (크면 일반 청킹)
         if s.get("section_type") == "table" and len(s["text"]) <= CHUNK_SIZE:
             m = dict(s)
             m["chunk_no"] = 1
             chunks_meta.append(m)
         else:
-            for i, ch in enumerate(_chunk_text(s["text"], CHUNK_SIZE, CHUNK_OVERLAP), start=1):
+            # RecursiveCharacterTextSplitter + 균등화 사용
+            chunked_texts = _uniform_chunking_with_recursive_splitter(
+                s["text"], CHUNK_SIZE, CHUNK_OVERLAP
+            )
+            for i, ch in enumerate(chunked_texts, start=1):
                 m = dict(s)
                 m["text"] = ch
                 m["chunk_no"] = i
@@ -434,6 +791,9 @@ def main():
     # 중복 및 빈 청크 제거
     chunks_meta = _remove_duplicate_chunks(chunks_meta)
     chunks_meta = _filter_empty_chunks(chunks_meta)
+    
+    # 청크 크기 분석
+    _analyze_chunk_sizes(chunks_meta, CHUNK_SIZE)
     
     print(f"✅ 최종 {len(chunks_meta)}개의 청크가 벡터 DB에 저장됩니다.")
 
