@@ -42,33 +42,10 @@ def _parse_llm_response_fallback(llm, prompt: str) -> Dict[str, Any]:
     """structured output 실패 시 일반 LLM 호출로 fallback"""
     try:
         print("🔄 Recommend 노드 fallback 파싱 시도...")
-        response = llm.generate_content(prompt, request_options={"timeout": 45})
+        response = llm.generate_content(prompt)
         response_text = response.text
         
-        # JSON 부분 추출 시도
-        import json
-        import re
-        
-        # JSON 패턴 찾기
-        json_pattern = r'\{.*\}'
-        json_match = re.search(json_pattern, response_text, re.DOTALL)
-        
-        if json_match:
-            json_str = json_match.group()
-            try:
-                parsed = json.loads(json_str)
-                return {
-                    "conclusion": parsed.get("conclusion", "추천을 생성했습니다."),
-                    "evidence": parsed.get("evidence", []),
-                    "caveats": parsed.get("caveats", []),
-                    "quotes": parsed.get("quotes", []),
-                    "recommendations": parsed.get("recommendations", []),
-                    "web_info": parsed.get("web_info", {})
-                }
-            except json.JSONDecodeError:
-                pass
-        
-        # JSON 파싱 실패 시 텍스트에서 정보 추출
+        # 간단한 텍스트 기반 fallback
         return {
             "conclusion": response_text[:500] if response_text else "추천을 생성했습니다.",
             "evidence": ["Fallback 파싱으로 생성된 답변"],
@@ -89,12 +66,12 @@ def _parse_llm_response_fallback(llm, prompt: str) -> Dict[str, Any]:
             "web_info": {}
         }
 
-def _parse_llm_response_structured(llm, prompt: str) -> Dict[str, Any]:
+def _parse_llm_response_structured(llm, prompt: str, emergency_fallback: bool = False) -> Dict[str, Any]:
     """LLM 응답을 structured output으로 파싱"""
     try:
-        # structured output 사용
-        structured_llm = llm.with_structured_output(RecommendResponse)
-        response = structured_llm.generate_content(prompt, request_options={"timeout": 45})
+        # structured output 사용 (긴급 탈출 모드 지원)
+        structured_llm = llm.with_structured_output(RecommendResponse, emergency_fallback=emergency_fallback)
+        response = structured_llm.generate_content(prompt)
         
         return {
             "conclusion": response.conclusion,
@@ -146,6 +123,11 @@ def recommend_node(state: Dict[str, Any]) -> Dict[str, Any]:
     passages = state.get("passages", [])
     web_results = state.get("web_results", [])
     
+    # 긴급 탈출 로직: 연속 구조화 실패 감지
+    structured_failure_count = state.get("structured_failure_count", 0)
+    max_structured_failures = state.get("max_structured_failures", 2)
+    emergency_fallback_used = state.get("emergency_fallback_used", False)
+    
     # 컨텍스트 포맷팅
     context = _format_context(passages)
     web_info = _format_web_results(web_results)
@@ -176,8 +158,45 @@ def recommend_node(state: Dict[str, Any]) -> Dict[str, Any]:
         # LLM 호출
         llm = get_llm()
         
-        # structured output 사용
-        answer = _parse_llm_response_structured(llm, full_prompt)
+        # 긴급 탈출 모드 결정
+        use_emergency_fallback = (structured_failure_count >= max_structured_failures) or emergency_fallback_used
+        
+        if use_emergency_fallback:
+            print(f"🚨 [Recommend Node] 긴급 탈출 모드 활성화 - 구조화 실패 횟수: {structured_failure_count}/{max_structured_failures}")
+        
+        # structured output 사용 (긴급 탈출 모드 지원)
+        answer = _parse_llm_response_structured(llm, full_prompt, emergency_fallback=use_emergency_fallback)
+        
+        # 구조화 실패 감지 및 카운터 업데이트
+        is_empty_result = (
+            not answer.get("conclusion") or 
+            answer.get("conclusion", "").strip() == "" or
+            answer.get("conclusion", "").strip() == "추천 정보를 제공할 수 없습니다."
+        )
+        
+        if is_empty_result and not use_emergency_fallback:
+            # 구조화 실패 카운터 증가
+            new_failure_count = structured_failure_count + 1
+            print(f"⚠️ [Recommend Node] 구조화 실패 감지 - 카운터: {new_failure_count}/{max_structured_failures}")
+            
+            # 연속 실패가 임계값에 도달하면 긴급 탈출 모드로 재시도
+            if new_failure_count >= max_structured_failures:
+                print(f"🚨 [Recommend Node] 연속 구조화 실패 임계값 도달 - 긴급 탈출 모드로 재시도")
+                answer = _parse_llm_response_structured(llm, full_prompt, emergency_fallback=True)
+                return {
+                    **state, 
+                    "draft_answer": answer, 
+                    "final_answer": answer,
+                    "structured_failure_count": new_failure_count,
+                    "emergency_fallback_used": True
+                }
+            else:
+                return {
+                    **state, 
+                    "draft_answer": answer, 
+                    "final_answer": answer,
+                    "structured_failure_count": new_failure_count
+                }
         
         # 출처 정보 추가 (quotes가 비어있을 때만)
         if passages and not answer.get("quotes"):
@@ -189,7 +208,14 @@ def recommend_node(state: Dict[str, Any]) -> Dict[str, Any]:
                 for p in passages[:3]  # 상위 3개만
             ]
         
-        return {**state, "draft_answer": answer, "final_answer": answer}
+        # 성공 시 구조화 실패 카운터 리셋
+        return {
+            **state, 
+            "draft_answer": answer, 
+            "final_answer": answer,
+            "structured_failure_count": 0,
+            "emergency_fallback_used": False
+        }
         
     except Exception as e:
         # LLM 호출 실패 시 fallback

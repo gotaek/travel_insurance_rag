@@ -359,9 +359,8 @@ def _generate_metrics(warnings: List[str], refined: List[Dict[str, Any]]) -> Dic
 
 def verify_refine_node(state: Dict[str, Any]) -> Dict[str, Any]:
     """개선된 검증 및 정제 노드 (보험사 우선순위 적용)"""
-    # 정책 로드 및 스키마 검증
-    policies = _load_policies()
-    schema_warnings = _validate_policy_schema(policies)
+    import logging
+    logger = logging.getLogger(__name__)
     
     # 입력 데이터
     refined = state.get("refined", []) or []
@@ -369,34 +368,49 @@ def verify_refine_node(state: Dict[str, Any]) -> Dict[str, Any]:
     intent = state.get("intent", "qa")
     insurer_filter = state.get("insurer_filter", None)  # Planner에서 전달된 보험사 필터
     
+    logger.info(f"🔍 [VerifyRefine] 시작 - 의도: {intent}, 보험사 필터: {insurer_filter}")
+    logger.info(f"🔍 [VerifyRefine] 입력 패시지 수: {len(refined)}")
+    
+    # 정책 로드 및 스키마 검증
+    policies = _load_policies()
+    schema_warnings = _validate_policy_schema(policies)
+    logger.info(f"🔍 [VerifyRefine] 정책 로드 완료, 스키마 경고: {len(schema_warnings)}개")
+    
     # 스키마 경고 추가
     warnings.extend(schema_warnings)
     
     # 의도별 기준 적용
     requirements = _get_intent_based_requirements(intent, policies)
+    logger.info(f"🔍 [VerifyRefine] 의도별 기준 적용: {requirements}")
     
     # 스코어 및 신선도 검증
     needs_more_search, quality_warnings = _check_score_and_freshness(refined, policies)
     warnings.extend(quality_warnings)
+    logger.info(f"🔍 [VerifyRefine] 품질 검증 완료 - 추가 검색 필요: {needs_more_search}, 경고: {len(quality_warnings)}개")
     
     # 중복 제거 및 출처 품질 검증
     unique_refined, dedup_warnings = _remove_duplicates_and_validate_sources(refined)
     warnings.extend(dedup_warnings)
+    logger.info(f"🔍 [VerifyRefine] 중복 제거 완료 - {len(refined)} → {len(unique_refined)}개, 경고: {len(dedup_warnings)}개")
     
     # 상충 탐지
     conflict_warnings = _detect_conflicts(unique_refined)
     warnings.extend(conflict_warnings)
+    logger.info(f"🔍 [VerifyRefine] 상충 탐지 완료 - 경고: {len(conflict_warnings)}개")
     
     # 표준화된 인용 생성 (보험사 우선순위 적용)
     citations = _build_standardized_citations(unique_refined, insurer_filter)
+    logger.info(f"🔍 [VerifyRefine] 인용 생성 완료 - {len(citations)}개")
     
     # 검증 상태 결정
     verification_status, next_action = _determine_verification_status(
         warnings, requirements, unique_refined, citations
     )
+    logger.info(f"🔍 [VerifyRefine] 검증 상태: {verification_status}, 다음 액션: {next_action}")
     
     # 메트릭 생성
     metrics = _generate_metrics(warnings, unique_refined)
+    logger.info(f"🔍 [VerifyRefine] 메트릭 생성 완료 - 총 경고: {len(warnings)}개")
     
     # 법적 면책 조항 (기본값 보장)
     disclaimer = policies.get("legal", {}).get("disclaimer", 

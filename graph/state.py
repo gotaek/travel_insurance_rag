@@ -34,6 +34,11 @@ class RAGState(TypedDict, total=False):
     replan_count: Annotated[int, "재검색 횟수 (최대 3회)"]
     max_replan_attempts: Annotated[int, "최대 재검색 시도 횟수"]
     
+    # 구조화 실패 감지
+    structured_failure_count: Annotated[int, "연속 구조화 실패 횟수"]
+    max_structured_failures: Annotated[int, "최대 연속 구조화 실패 허용 횟수 (기본 2회)"]
+    emergency_fallback_used: Annotated[bool, "긴급 탈출 fallback 사용 여부"]
+    
     # 시스템 정보
     warnings: Annotated[List[str], "경고 메시지"]
     trace: Annotated[List[Dict[str, Any]], "실행 추적 정보"]

@@ -29,31 +29,10 @@ def _parse_llm_response_fallback(llm, prompt: str) -> Dict[str, Any]:
     """structured output 실패 시 일반 LLM 호출로 fallback"""
     try:
         print("🔄 QA 노드 fallback 파싱 시도...")
-        response = llm.generate_content(prompt, request_options={"timeout": 45})
+        response = llm.generate_content(prompt)
         response_text = response.text
         
-        # JSON 부분 추출 시도
-        import json
-        import re
-        
-        # JSON 패턴 찾기
-        json_pattern = r'\{.*\}'
-        json_match = re.search(json_pattern, response_text, re.DOTALL)
-        
-        if json_match:
-            json_str = json_match.group()
-            try:
-                parsed = json.loads(json_str)
-                return {
-                    "conclusion": parsed.get("conclusion", "답변을 생성했습니다."),
-                    "evidence": parsed.get("evidence", []),
-                    "caveats": parsed.get("caveats", []),
-                    "quotes": parsed.get("quotes", [])
-                }
-            except json.JSONDecodeError:
-                pass
-        
-        # JSON 파싱 실패 시 텍스트에서 정보 추출
+        # 간단한 텍스트 기반 fallback
         return {
             "conclusion": response_text[:500] if response_text else "답변을 생성했습니다.",
             "evidence": ["Fallback 파싱으로 생성된 답변"],
@@ -70,12 +49,12 @@ def _parse_llm_response_fallback(llm, prompt: str) -> Dict[str, Any]:
             "quotes": []
         }
 
-def _parse_llm_response_structured(llm, prompt: str) -> Dict[str, Any]:
+def _parse_llm_response_structured(llm, prompt: str, emergency_fallback: bool = False) -> Dict[str, Any]:
     """LLM 응답을 structured output으로 파싱"""
     try:
-        # structured output 사용
-        structured_llm = llm.with_structured_output(AnswerResponse)
-        response = structured_llm.generate_content(prompt, request_options={"timeout": 45})
+        # structured output 사용 (긴급 탈출 모드 지원)
+        structured_llm = llm.with_structured_output(AnswerResponse, emergency_fallback=emergency_fallback)
+        response = structured_llm.generate_content(prompt)
         
         return {
             "conclusion": response.conclusion,
@@ -107,8 +86,20 @@ def qa_node(state: Dict[str, Any]) -> Dict[str, Any]:
     """
     QA 에이전트: 질문에 대한 직접적인 답변 생성
     """
+    import logging
+    logger = logging.getLogger(__name__)
+    
     question = state.get("question", "")
     passages = state.get("passages", [])
+    
+    logger.info(f"🔍 [QA] 시작 - 질문: '{question[:100]}...', 패시지 수: {len(passages)}")
+    
+    # 긴급 탈출 로직: 연속 구조화 실패 감지
+    structured_failure_count = state.get("structured_failure_count", 0)
+    max_structured_failures = state.get("max_structured_failures", 2)
+    emergency_fallback_used = state.get("emergency_fallback_used", False)
+    
+    logger.info(f"🔍 [QA] 구조화 실패 횟수: {structured_failure_count}/{max_structured_failures}, 긴급 탈출: {emergency_fallback_used}")
     
     # 컨텍스트 포맷팅
     context = _format_context(passages)
@@ -136,8 +127,51 @@ def qa_node(state: Dict[str, Any]) -> Dict[str, Any]:
         # LLM 호출 (타임아웃 설정)
         llm = get_llm()
         
-        # structured output 사용
-        answer = _parse_llm_response_structured(llm, full_prompt)
+        # 긴급 탈출 모드 결정
+        use_emergency_fallback = (structured_failure_count >= max_structured_failures) or emergency_fallback_used
+        
+        if use_emergency_fallback:
+            logger.warning(f"🚨 [QA] 긴급 탈출 모드 활성화 - 구조화 실패 횟수: {structured_failure_count}/{max_structured_failures}")
+        else:
+            logger.info(f"🔍 [QA] 정상 모드 - 구조화 실패 횟수: {structured_failure_count}/{max_structured_failures}")
+        
+        # structured output 사용 (긴급 탈출 모드 지원)
+        logger.info(f"🔍 [QA] LLM 호출 시작 - 프롬프트 길이: {len(full_prompt)}자")
+        answer = _parse_llm_response_structured(llm, full_prompt, emergency_fallback=use_emergency_fallback)
+        logger.info(f"🔍 [QA] LLM 응답 수신 완료")
+        
+        # 구조화 실패 감지 및 카운터 업데이트
+        is_empty_result = (
+            not answer.get("conclusion") or 
+            answer.get("conclusion", "").strip() == "" or
+            answer.get("conclusion", "").strip() == "답변을 생성할 수 없습니다."
+        )
+        
+        if is_empty_result and not use_emergency_fallback:
+            # 구조화 실패 카운터 증가
+            new_failure_count = structured_failure_count + 1
+            logger.warning(f"⚠️ [QA] 구조화 실패 감지 - 카운터: {new_failure_count}/{max_structured_failures}")
+            
+            # 연속 실패가 임계값에 도달하면 긴급 탈출 모드로 재시도
+            if new_failure_count >= max_structured_failures:
+                logger.warning(f"🚨 [QA] 연속 구조화 실패 임계값 도달 - 긴급 탈출 모드로 재시도")
+                answer = _parse_llm_response_structured(llm, full_prompt, emergency_fallback=True)
+                logger.info(f"🔍 [QA] 긴급 탈출 모드 재시도 완료")
+                return {
+                    **state, 
+                    "draft_answer": answer, 
+                    "final_answer": answer,
+                    "structured_failure_count": new_failure_count,
+                    "emergency_fallback_used": True
+                }
+            else:
+                logger.info(f"🔍 [QA] 구조화 실패 - 카운터 증가: {new_failure_count}")
+                return {
+                    **state, 
+                    "draft_answer": answer, 
+                    "final_answer": answer,
+                    "structured_failure_count": new_failure_count
+                }
         
         # 출처 정보 추가 (quotes가 비어있을 때만)
         if passages and not answer.get("quotes"):
@@ -148,11 +182,21 @@ def qa_node(state: Dict[str, Any]) -> Dict[str, Any]:
                 }
                 for p in passages[:3]  # 상위 3개만
             ]
+            logger.info(f"🔍 [QA] 출처 정보 추가 - {len(answer['quotes'])}개")
         
-        return {**state, "draft_answer": answer, "final_answer": answer}
+        # 성공 시 구조화 실패 카운터 리셋
+        logger.info(f"🔍 [QA] 답변 생성 완료 - 결론 길이: {len(answer.get('conclusion', ''))}자")
+        return {
+            **state, 
+            "draft_answer": answer, 
+            "final_answer": answer,
+            "structured_failure_count": 0,
+            "emergency_fallback_used": False
+        }
         
     except Exception as e:
         # LLM 호출 실패 시 fallback
+        logger.error(f"❌ [QA] LLM 호출 실패: {str(e)}")
         error_str = str(e).lower()
         if "quota" in error_str or "limit" in error_str or "429" in error_str:
             fallback_answer = {

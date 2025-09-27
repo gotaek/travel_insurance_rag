@@ -458,6 +458,60 @@ def main():
         except:
             st.error("❌ API 서버에 연결할 수 없습니다")
         
+        # 상세 진단 정보
+        if st.button("🔍 상세 진단", help="API 상태 및 설정을 자세히 확인합니다"):
+            with st.spinner("진단 중..."):
+                try:
+                    api_status = requests.get(f"{API_BASE_URL}/api-status", timeout=10).json()
+                    
+                    st.subheader("📊 API 상태 진단")
+                    
+                    # Gemini 상태
+                    gemini = api_status.get("gemini", {})
+                    st.write("**🤖 Gemini API**")
+                    st.write(f"상태: {gemini.get('status', '❓')}")
+                    st.write(f"모델: {gemini.get('model', '❓')}")
+                    st.write(f"API 키: {gemini.get('api_key', '❓')}")
+                    
+                    if gemini.get('error'):
+                        st.error(f"오류: {gemini.get('error')}")
+                        st.info("💡 해결 방법:")
+                        if "API 키" in gemini.get('error', ''):
+                            st.write("1. .env 파일에 GEMINI_API_KEY가 올바르게 설정되었는지 확인")
+                            st.write("2. API 키가 유효한지 Google AI Studio에서 확인")
+                        elif "할당량" in gemini.get('error', ''):
+                            st.write("1. Google AI Studio에서 할당량 확인")
+                            st.write("2. 잠시 후 다시 시도")
+                        elif "권한" in gemini.get('error', ''):
+                            st.write("1. API 키에 해당 모델 접근 권한이 있는지 확인")
+                            st.write("2. 모델 이름이 올바른지 확인")
+                        elif "네트워크" in gemini.get('error', ''):
+                            st.write("1. 인터넷 연결 확인")
+                            st.write("2. 방화벽 설정 확인")
+                    
+                    # 사용 가능한 모델
+                    available_models = gemini.get('available_models', [])
+                    if available_models:
+                        st.write(f"**사용 가능한 모델**: {', '.join(available_models[:5])}")
+                        if len(available_models) > 5:
+                            st.write(f"... 외 {len(available_models) - 5}개")
+                    
+                    # Tavily 상태
+                    tavily = api_status.get("tavily", {})
+                    st.write("**🌐 Tavily API**")
+                    st.write(f"상태: {tavily.get('status', '❓')}")
+                    
+                    # 전체 상태
+                    overall = api_status.get("overall", "❓")
+                    if "✅" in overall:
+                        st.success(f"전체 상태: {overall}")
+                    else:
+                        st.error(f"전체 상태: {overall}")
+                        
+                except Exception as e:
+                    st.error(f"진단 실패: {str(e)}")
+                    st.info("API 서버가 실행 중인지 확인해주세요.")
+        
         st.markdown("---")
         
         # 세션 정보

@@ -21,6 +21,11 @@ def replan_node(state: Dict[str, Any]) -> Dict[str, Any]:
     logger.debug(f"품질 피드백: {quality_feedback}")
     logger.debug(f"제안된 재검색 질문: {replan_query}")
     
+    # 긴급 탈출 로직: 연속 구조화 실패 감지
+    structured_failure_count = state.get("structured_failure_count", 0)
+    max_structured_failures = state.get("max_structured_failures", 2)
+    emergency_fallback_used = state.get("emergency_fallback_used", False)
+    
     # 최대 시도 횟수 체크
     if replan_count >= max_attempts:
         logger.warning(f"🚨 최대 재검색 횟수({max_attempts})에 도달하여 재검색을 중단합니다.")
@@ -30,6 +35,18 @@ def replan_node(state: Dict[str, Any]) -> Dict[str, Any]:
             "replan_count": replan_count + 1,
             "needs_replan": False,
             "final_answer": state.get("draft_answer", {"conclusion": "재검색 횟수 초과로 답변을 완료합니다."})
+        }
+    
+    # 긴급 탈출: 연속 구조화 실패가 임계값에 도달한 경우
+    if structured_failure_count >= max_structured_failures or emergency_fallback_used:
+        logger.warning(f"🚨 연속 구조화 실패 임계값 도달({structured_failure_count}/{max_structured_failures}) - 재검색 중단")
+        print(f"🚨 replan에서 긴급 탈출 - 구조화 실패: {structured_failure_count}/{max_structured_failures}")
+        return {
+            **state,
+            "replan_count": replan_count + 1,
+            "needs_replan": False,
+            "final_answer": state.get("draft_answer", {"conclusion": "연속 구조화 실패로 인한 긴급 탈출"}),
+            "emergency_fallback_used": True
         }
     
     # LLM을 사용하여 재검색 질문 생성
@@ -77,7 +94,7 @@ def _generate_replan_query(original_question: str, feedback: str, suggested_quer
         
         # structured output 사용
         structured_llm = llm.with_structured_output(ReplanResponse)
-        response = structured_llm.generate_content(prompt, request_options={"timeout": 10})
+        response = structured_llm.generate_content(prompt)
         
         logger.debug(f"Structured LLM 응답: {response}")
         

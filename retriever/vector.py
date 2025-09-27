@@ -156,82 +156,12 @@ def vector_search(query: str, db_path: str, collection_name: str = "insurance_do
     # 벡터 검색 수행 (필터링 없이)
     results = store.search(query, k=search_k)
     
-    # 보험사 필터링 적용 (사후 필터링)
-    if insurer_filter and results:
-        results = _apply_insurer_filter_to_results(results, insurer_filter)
-        # 필터링 후 결과 수 제한
+    # 보험사 필터링은 VectorStore 내부에서 처리됨
+    # 결과 수 제한
+    if results:
         results = results[:k]
     
     return results
-
-# 기존 사후 필터링 함수는 네이티브 필터링으로 대체됨
-# 이 함수는 더 이상 사용되지 않음 (하위 호환성을 위해 유지)
-def _apply_insurer_filter_to_results(results: List[Dict[str, Any]], insurer_filter: List[str]) -> List[Dict[str, Any]]:
-    """
-    벡터 검색 결과에 보험사 필터를 적용합니다.
-    부분 매칭을 지원하여 '카카오'로 '카카오페이' 검색 가능
-    중복 제거 및 효율적인 매칭 지원
-    
-    Args:
-        results: 벡터 검색 결과
-        insurer_filter: 보험사 필터 리스트
-        
-    Returns:
-        필터링된 검색 결과
-    """
-    if not insurer_filter:
-        return results
-    
-    import unicodedata
-    
-    def normalize_korean(text: str) -> str:
-        """한글 정규화 (완성형 -> 조합형) - DB가 NFD 형태로 저장됨"""
-        return unicodedata.normalize('NFD', text)
-    
-    def is_match(doc_insurer: str, filter_insurer: str) -> bool:
-        """보험사 이름과 필터가 매칭되는지 확인"""
-        normalized_filter = normalize_korean(filter_insurer).lower()
-        
-        # 정확한 매칭
-        if doc_insurer == normalized_filter:
-            return True
-        
-        # 부분 매칭 (필터가 보험사 이름에 포함되거나, 보험사 이름이 필터에 포함)
-        if (normalized_filter in doc_insurer or 
-            doc_insurer in normalized_filter):
-            return True
-        
-        # 단어 단위 매칭
-        filter_words = normalized_filter.split()
-        doc_words = doc_insurer.split()
-        
-        # 필터의 모든 단어가 보험사 이름에 포함되는지 확인
-        if all(any(word in doc_word or doc_word in word for doc_word in doc_words) for word in filter_words):
-            return True
-        
-        return False
-    
-    # 중복 제거를 위한 set 사용
-    seen_results = set()
-    filtered_results = []
-    
-    for result in results:
-        doc_insurer = normalize_korean(result.get("insurer", "")).lower()
-        
-        # 보험사 필터와 매칭되는지 확인
-        matched = False
-        for filter_insurer in insurer_filter:
-            if is_match(doc_insurer, filter_insurer):
-                # 중복 제거를 위한 고유 키 생성
-                result_key = f"{result.get('doc_id', '')}_{result.get('page', '')}_{result.get('chunk_no', '')}"
-                
-                if result_key not in seen_results:
-                    seen_results.add(result_key)
-                    filtered_results.append(result)
-                matched = True
-                break
-    
-    return filtered_results
 
 def get_vector_store_info() -> Dict[str, Any]:
     """VectorStore 캐시 정보 반환"""

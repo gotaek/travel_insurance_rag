@@ -37,10 +37,6 @@ ALIAS_MAP = {
 # 정규식 패턴용 후보(길이 내림차순으로 중복/겹침 방지)
 ALIAS_SORTED = sorted(ALIAS_MAP.keys(), key=len, reverse=True)
 
-# 한국어 조사/공백/문장부호 경계 허용 (앞뒤로 글자/숫자 이어붙임 방지)
-# ex) "현대해상은", "KB손해보험(여행자)", "DB 손해보험"
-BOUNDARY = r"(?<![가-힣A-Za-z0-9]){}(?![가-힣A-Za-z0-9])"
-
 def _extract_insurers_from_question(question: str) -> List[str]:
     """
     질문에서 보험사 엔티티(정식명 canonical)를 추출합니다.
@@ -138,7 +134,7 @@ def _llm_classify_intent(question: str) -> Dict[str, Any]:
         
         # structured output 사용
         structured_llm = llm.with_structured_output(PlannerResponse)
-        response = structured_llm.generate_content(prompt, request_options={"timeout": 10})
+        response = structured_llm.generate_content(prompt)
         
         logger.debug(f"Structured LLM 응답: {response}")
         

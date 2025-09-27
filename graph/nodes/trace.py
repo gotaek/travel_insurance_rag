@@ -22,10 +22,15 @@ def wrap_with_trace(fn: Callable[[Dict[str, Any]], Dict[str, Any]], node_name: s
       - in/out token 추정
       - state['trace']에 append
     """
+    import logging
+    logger = logging.getLogger(__name__)
+    
     def _wrapped(state: Dict[str, Any]) -> Dict[str, Any]:
         trace_list = state.get("trace") or []
         in_tokens = _count_tokens_from_state(state)
         t0 = time.perf_counter()
+        
+        logger.info(f"⏱️ [Trace] {node_name} 시작 - 입력 토큰: {in_tokens}개")
 
         out = fn(state)  # 실제 노드 호출
 
@@ -41,5 +46,7 @@ def wrap_with_trace(fn: Callable[[Dict[str, Any]], Dict[str, Any]], node_name: s
         }
         trace_list.append(trace_item)
         result_state["trace"] = trace_list
+        
+        logger.info(f"⏱️ [Trace] {node_name} 완료 - 실행시간: {dur_ms}ms, 출력 토큰: {out_tokens}개")
         return result_state
     return _wrapped

@@ -15,6 +15,7 @@ tqdm
 PyYAML
 
 google-generativeai
+google-genai>=0.2.0
 
 pandas
 datasets

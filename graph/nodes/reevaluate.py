@@ -22,6 +22,10 @@ def reevaluate_node(state: Dict[str, Any]) -> Dict[str, Any]:
     replan_count = state.get("replan_count", 0)
     max_attempts = state.get("max_replan_attempts", MAX_REPLAN_ATTEMPTS)
     
+    logger.info(f"🔍 [Reevaluate] 시작 - 재검색 횟수: {replan_count}/{max_attempts}")
+    logger.info(f"🔍 [Reevaluate] 질문: '{question[:100]}...'")
+    logger.info(f"🔍 [Reevaluate] 답변 타입: {type(answer)}, 인용 수: {len(citations)}, 패시지 수: {len(passages)}")
+    
     # 답변 텍스트 추출 - 다양한 답변 구조 지원
     if isinstance(answer, dict):
         # conclusion 필드가 있으면 사용 (summarize, qa, compare, recommend 노드)
@@ -35,9 +39,14 @@ def reevaluate_node(state: Dict[str, Any]) -> Dict[str, Any]:
     else:
         answer_text = str(answer)
     
+    # 긴급 탈출 로직: 연속 구조화 실패 감지
+    structured_failure_count = state.get("structured_failure_count", 0)
+    max_structured_failures = state.get("max_structured_failures", 2)
+    emergency_fallback_used = state.get("emergency_fallback_used", False)
+    
     # 성능 최적화: 3번째 사이클부터는 품질 평가 없이 바로 답변 제공
     if replan_count >= 3:
-        logger.info(f"재검색 횟수가 {replan_count}회에 도달 - 품질 평가 없이 답변 완료")
+        logger.warning(f"🚨 [Reevaluate] 재검색 횟수가 {replan_count}회에 도달 - 품질 평가 없이 답변 완료")
         return {
             **state,
             "needs_replan": False,
@@ -46,10 +55,22 @@ def reevaluate_node(state: Dict[str, Any]) -> Dict[str, Any]:
             "replan_count": replan_count
         }
     
+    # 긴급 탈출: 연속 구조화 실패가 임계값에 도달한 경우
+    if structured_failure_count >= max_structured_failures or emergency_fallback_used:
+        logger.warning(f"🚨 [Reevaluate] 연속 구조화 실패 임계값 도달({structured_failure_count}/{max_structured_failures}) - 긴급 탈출")
+        return {
+            **state,
+            "needs_replan": False,
+            "final_answer": answer,
+            "quality_feedback": f"연속 구조화 실패({structured_failure_count}회)로 인한 긴급 탈출",
+            "replan_count": replan_count,
+            "emergency_fallback_used": True
+        }
+    
     # LLM을 사용한 품질 평가 (3번째 사이클 이전에만)
-    logger.info(f"답변 품질 평가 시작 - 질문: {question[:50]}... (재검색 횟수: {replan_count})")
-    logger.debug(f"추출된 답변 텍스트: {answer_text[:100]}..." if answer_text else "답변 텍스트가 비어있음")
-    logger.debug(f"답변 원본 타입: {type(answer)}, 내용: {str(answer)[:100]}...")
+    logger.info(f"🔍 [Reevaluate] 답변 품질 평가 시작 - 질문: {question[:50]}... (재검색 횟수: {replan_count})")
+    logger.debug(f"🔍 [Reevaluate] 추출된 답변 텍스트: {answer_text[:100]}..." if answer_text else "답변 텍스트가 비어있음")
+    logger.debug(f"🔍 [Reevaluate] 답변 원본 타입: {type(answer)}, 내용: {str(answer)[:100]}...")
     quality_result = _evaluate_answer_quality(question, answer_text, citations, passages)
     
     # 재검색 횟수 체크 및 무한루프 방지
@@ -58,25 +79,25 @@ def reevaluate_node(state: Dict[str, Any]) -> Dict[str, Any]:
     # 무한루프 방지: 최대 시도 횟수에 도달하면 강제로 답변 완료 (3번째 사이클 이후)
     if replan_count >= max_attempts:
         needs_replan = False
-        logger.warning(f"🚨 최대 재검색 횟수({max_attempts})에 도달하여 답변을 완료합니다.")
+        logger.warning(f"🚨 [Reevaluate] 최대 재검색 횟수({max_attempts})에 도달하여 답변을 완료합니다.")
         quality_result["score"] = max(quality_result["score"], 0.5)  # 최소 0.5점 보장
         print(f"🚨 reevaluate에서 강제 완료 - replan_count: {replan_count}, max_attempts: {max_attempts}")
     
     # 답변이 실제로 존재하는 경우 최소 점수 보장
     if answer_text and answer_text.strip() and quality_result["score"] < 0.3:
-        logger.warning(f"답변이 존재하지만 낮은 점수({quality_result['score']:.2f}) - 최소 점수 0.3으로 조정")
+        logger.warning(f"🔍 [Reevaluate] 답변이 존재하지만 낮은 점수({quality_result['score']:.2f}) - 최소 점수 0.3으로 조정")
         quality_result["score"] = 0.3
         if quality_result["score"] >= QUALITY_THRESHOLD:
             needs_replan = False
     
     # 추가 안전장치: 재검색 횟수가 2회 이상이면 더 관대하게 평가 (3번째 사이클 이전에만)
     if replan_count >= 2 and replan_count < 3 and answer_text and answer_text.strip():
-        logger.warning(f"재검색 횟수가 {replan_count}회로 높음 - 더 관대하게 평가")
+        logger.warning(f"🔍 [Reevaluate] 재검색 횟수가 {replan_count}회로 높음 - 더 관대하게 평가")
         quality_result["score"] = max(quality_result["score"], 0.6)
         if quality_result["score"] >= QUALITY_THRESHOLD:
             needs_replan = False
     
-    logger.info(f"품질 점수: {quality_result['score']:.2f}, 재검색 필요: {needs_replan}, 재검색 횟수: {replan_count}/{max_attempts}")
+    logger.info(f"🔍 [Reevaluate] 품질 점수: {quality_result['score']:.2f}, 재검색 필요: {needs_replan}, 재검색 횟수: {replan_count}/{max_attempts}")
     
     return {
         **state,
@@ -132,7 +153,7 @@ def _evaluate_answer_quality(question: str, answer: str, citations: List[Dict[st
         
         # structured output 사용
         structured_llm = llm.with_structured_output(QualityEvaluationResponse)
-        response = structured_llm.generate_content(prompt, request_options={"timeout": 10})
+        response = structured_llm.generate_content(prompt)
         
         logger.debug(f"Structured LLM 응답: {response}")
         

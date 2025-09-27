@@ -13,57 +13,6 @@ from retriever.korean_tokenizer import (
 )
 from app.deps import get_settings
 
-def _apply_insurer_filter(passages: List[Dict[str, Any]], insurer_filter: List[str]) -> List[Dict[str, Any]]:
-    """
-    보험사 필터를 적용하여 문서를 필터링합니다.
-    insurer 필드를 사용하여 정확한 매칭 수행
-    
-    Args:
-        passages: 검색 결과 패시지 리스트
-        insurer_filter: 필터링할 보험사 리스트
-        
-    Returns:
-        필터링된 패시지 리스트
-    """
-    if not insurer_filter:
-        return passages
-    
-    print(f"🔍 사후 보험사 필터링 적용: {insurer_filter}")
-    print(f"📊 필터링 전: {len(passages)}개 문서")
-    
-    import unicodedata
-    
-    def normalize_korean(text: str) -> str:
-        """한글 정규화 (완성형 -> 조합형) - DB가 NFD 형태로 저장됨"""
-        return unicodedata.normalize('NFD', text)
-    
-    filtered_passages = []
-    for passage in passages:
-        doc_insurer = normalize_korean(passage.get("insurer", "")).lower()
-        
-        # 보험사 필터와 매칭되는지 확인
-        for filter_insurer in insurer_filter:
-            normalized_filter = normalize_korean(filter_insurer).lower()
-            
-            # 정확한 매칭 우선 시도
-            if doc_insurer == normalized_filter:
-                filtered_passages.append(passage)
-                break
-            
-            # 부분 매칭 시도 (카카오 -> 카카오페이)
-            if normalized_filter in doc_insurer or doc_insurer in normalized_filter:
-                filtered_passages.append(passage)
-                break
-    
-    print(f"📊 필터링 후: {len(filtered_passages)}개 문서")
-    return filtered_passages
-
-
-
-
-
-
-
 def search_node(state: Dict[str, Any]) -> Dict[str, Any]:
     """
     웹 검색 결과를 활용한 개선된 하이브리드 검색 수행

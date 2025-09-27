@@ -64,7 +64,7 @@ def rag_ask(req: AskRequest):
                 # 컨텍스트 로드 실패해도 계속 진행
         
         # 그래프 실행
-        logger.info("LangGraph 실행 시작")
+        logger.info("🚀 [RAG] LangGraph 실행 시작")
         g = build_graph()
         state = {
             "question": req.question,
@@ -79,7 +79,22 @@ def rag_ask(req: AskRequest):
         # 재귀 제한 설정 (무한루프 방지)
         config = {"recursion_limit": 25}
         out = g.invoke(state, config=config)
-        logger.info("LangGraph 실행 완료")
+        logger.info("✅ [RAG] LangGraph 실행 완료")
+        
+        # 파이프라인 실행 요약 로그
+        trace = out.get("trace", [])
+        if trace:
+            total_time = sum(t.get("latency_ms", 0) for t in trace)
+            total_tokens = sum(t.get("out_tokens_approx", 0) for t in trace)
+            logger.info(f"📊 [RAG] 파이프라인 요약 - 총 실행시간: {total_time}ms, 총 토큰: {total_tokens}개")
+            logger.info(f"📊 [RAG] 실행된 노드: {[t.get('node') for t in trace]}")
+            
+            # 각 노드별 성능 요약
+            for t in trace:
+                node_name = t.get("node", "unknown")
+                latency = t.get("latency_ms", 0)
+                tokens = t.get("out_tokens_approx", 0)
+                logger.info(f"📊 [RAG] {node_name}: {latency}ms, {tokens}토큰")
         
         # 대화 턴 생성 및 저장
         if conversation_context and out.get("draft_answer"):
