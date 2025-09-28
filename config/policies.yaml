@@ -46,3 +46,18 @@ source_weights:
   공지: 0.9
   안내: 0.8
   기타: 0.7
+
+# 시스템 전역 설정
+system:
+  # 재검색 관련 설정
+  replan:
+    max_attempts: 3                    # 최대 재검색 시도 횟수
+    max_structured_failures: 2         # 최대 연속 구조화 실패 허용 횟수
+    quality_threshold: 0.7             # 품질 평가 임계값
+    emergency_fallback_threshold: 3     # 긴급 탈출 임계값 (재검색 횟수)
+  
+  # 성능 최적화 설정
+  performance:
+    enable_llm_classification: true     # LLM 분류 사용 여부
+    fallback_priority: true            # fallback 분류 우선 사용
+    complex_case_threshold: 2          # 복잡한 케이스 판단 임계값

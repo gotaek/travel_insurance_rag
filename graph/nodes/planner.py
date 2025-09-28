@@ -4,6 +4,7 @@ import re
 import logging
 from app.deps import get_llm
 from graph.models import PlannerResponse
+from graph.config_manager import get_system_config
 
 # 로깅 설정
 logger = logging.getLogger(__name__)
@@ -305,6 +306,7 @@ def _determine_web_search_need(question: str, intent: str) -> bool:
     date_patterns = [
         r"\d{4}년", r"\d{4}-\d{2}", r"\d{4}/\d{2}", r"\d{4}\.\d{2}",
         r"\d{1,2}월", r"내년", r"올해", r"다음 달", r"이번 달",
+        r"다음주", r"이번 주", r"내일", r"오늘", r"모레",
         r"현재", r"지금", r"요즘", r"최근", r"최신"
     ]
     has_date = any(re.search(pattern, question) for pattern in date_patterns)
@@ -417,6 +419,10 @@ def _needs_llm_classification(question: str) -> bool:
     """
     복잡한 케이스인지 판단하여 LLM 분류가 필요한지 결정
     """
+    # 시스템 설정에서 임계값 가져오기
+    config = get_system_config()
+    threshold = config.get_complex_case_threshold()
+    
     # 복잡한 패턴들 (LLM이 더 정확할 수 있는 경우)
     complex_patterns = [
         # 모호한 질문
@@ -431,9 +437,9 @@ def _needs_llm_classification(question: str) -> bool:
         "요약", "정리", "핵심", "주요", "개요"
     ]
     
-    # 복잡한 키워드가 2개 이상 있으면 LLM 사용
+    # 복잡한 키워드가 임계값 이상 있으면 LLM 사용
     complex_count = sum(1 for pattern in complex_patterns if pattern in question)
-    return complex_count >= 2
+    return complex_count >= threshold
 
 def _is_llm_result_better(fallback_result: Dict[str, Any], llm_result: Dict[str, Any]) -> bool:
     """
@@ -478,35 +484,55 @@ def planner_node(state: Dict[str, Any]) -> Dict[str, Any]:
     logger.info(f"비보유 보험사: {insurer_info['non_owned_insurers']}")
     logger.info(f"보험사 기반 needs_web: {insurer_info['needs_web']}")
     
-    # 성능 최적화: fallback 분류 우선 사용
-    logger.debug("빠른 fallback 분류 사용")
-    classification = _fallback_classify(q)
+    # 시스템 설정에 따른 분류 전략 결정
+    config = get_system_config()
     
-    # 복잡한 케이스에만 LLM 사용 (선택적)
-    if _needs_llm_classification(q):
-        logger.debug("복잡한 케이스로 LLM 분류 사용")
-        try:
-            llm_classification = _llm_classify_intent(q)
-            # LLM 결과가 더 정확하면 사용
-            if _is_llm_result_better(classification, llm_classification):
-                classification = llm_classification
-                logger.debug("LLM 분류 결과 사용")
-        except Exception as e:
-            logger.warning(f"LLM 분류 실패, fallback 결과 유지: {str(e)}")
+    # 성능 최적화: fallback 분류 우선 사용
+    if config.is_fallback_priority():
+        logger.debug("빠른 fallback 분류 사용")
+        classification = _fallback_classify(q)
+        
+        # 복잡한 케이스에만 LLM 사용 (선택적)
+        if config.is_llm_classification_enabled() and _needs_llm_classification(q):
+            logger.debug("복잡한 케이스로 LLM 분류 사용")
+            try:
+                llm_classification = _llm_classify_intent(q)
+                # LLM 결과가 더 정확하면 사용
+                if _is_llm_result_better(classification, llm_classification):
+                    classification = llm_classification
+                    logger.debug("LLM 분류 결과 사용")
+            except Exception as e:
+                logger.warning(f"LLM 분류 실패, fallback 결과 유지: {str(e)}")
+    else:
+        # LLM 분류 우선 사용
+        if config.is_llm_classification_enabled():
+            logger.debug("LLM 분류 우선 사용")
+            try:
+                classification = _llm_classify_intent(q)
+            except Exception as e:
+                logger.warning(f"LLM 분류 실패, fallback 사용: {str(e)}")
+                classification = _fallback_classify(q)
+        else:
+            classification = _fallback_classify(q)
     
     intent = classification["intent"]
     
-    # 보험사 정보를 기반으로 needs_web 최종 결정
-    # 보험사가 언급된 경우: 보험사 기반 needs_web 우선 적용
-    # 보험사가 언급되지 않은 경우: 기존 needs_web 로직 적용
-    if insurer_info["extracted_insurers"]:
-        # 보험사가 언급된 경우: 보험사 기반 needs_web만 사용
-        needs_web = insurer_info["needs_web"]
-        logger.info(f"보험사 언급됨: {insurer_info['extracted_insurers']}, 보험사 기반 needs_web: {needs_web}")
+    # 2번째 사이클에서는 무조건 needs_web을 True로 설정
+    if replan_count >= 1:
+        needs_web = True
+        logger.info(f"🔄 2번째 사이클 이상 - 무조건 웹 검색 활성화 (재검색 횟수: {replan_count})")
     else:
-        # 보험사가 언급되지 않은 경우: 기존 needs_web 로직 사용
-        needs_web = classification["needs_web"]
-        logger.info(f"보험사 언급되지 않음, 기존 needs_web: {needs_web}")
+        # 보험사 정보를 기반으로 needs_web 최종 결정
+        # 보험사가 언급된 경우: 보험사 기반 needs_web 우선 적용
+        # 보험사가 언급되지 않은 경우: 기존 needs_web 로직 적용
+        if insurer_info["extracted_insurers"]:
+            # 보험사가 언급된 경우: 보험사 기반 needs_web만 사용
+            needs_web = insurer_info["needs_web"]
+            logger.info(f"보험사 언급됨: {insurer_info['extracted_insurers']}, 보험사 기반 needs_web: {needs_web}")
+        else:
+            # 보험사가 언급되지 않은 경우: 기존 needs_web 로직 사용
+            needs_web = classification["needs_web"]
+            logger.info(f"보험사 언급되지 않음, 기존 needs_web: {needs_web}")
     
     reasoning = classification.get("reasoning", "")
     
@@ -528,5 +554,5 @@ def planner_node(state: Dict[str, Any]) -> Dict[str, Any]:
         "non_owned_insurers": insurer_info["non_owned_insurers"],
         # replan_count는 명시적으로 유지 (초기화하지 않음)
         "replan_count": replan_count,
-        "max_replan_attempts": state.get("max_replan_attempts", 3)
+        "max_replan_attempts": state.get("max_replan_attempts", config.get_max_replan_attempts())
     }

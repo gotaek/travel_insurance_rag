@@ -31,8 +31,9 @@ API_BASE_URL = os.getenv("API_BASE_URL", "http://localhost:8000")
 
 def render_chat_message(message_type: str, content: str, 
                        evidence: List[str] = None, caveats: List[str] = None, 
-                       quality_score: float = None, error: bool = False) -> None:
-    """기본 채팅 메시지 렌더링 (Streamlit 기본 컴포넌트 사용)"""
+                       quality_score: float = None, error: bool = False,
+                       comparison_table: Dict[str, Any] = None) -> None:
+    """기본 채팅 메시지 렌더링 (마크다운 지원 포함)"""
     
     # 메시지 타입에 따른 헤더 결정
     if message_type == "user":
@@ -49,7 +50,22 @@ def render_chat_message(message_type: str, content: str,
         if error:
             st.error(f"**{header}**\n\n{content}")
         else:
-            st.success(f"**{header}**\n\n{content}")
+            # AI 답변을 마크다운으로 렌더링
+            st.markdown(f"**{header}**")
+            st.markdown(content)  # 마크다운 렌더링
+    
+    # 비교 표 데이터가 있으면 표로 렌더링
+    if comparison_table and isinstance(comparison_table, dict):
+        headers = comparison_table.get("headers", [])
+        rows = comparison_table.get("rows", [])
+        
+        if headers and rows:
+            st.markdown("### 📊 비교 표")
+            
+            # DataFrame으로 변환하여 표시
+            import pandas as pd
+            df = pd.DataFrame(rows, columns=headers)
+            st.dataframe(df, use_container_width=True)
     
     # 증거 정보 표시
     if evidence:
@@ -566,13 +582,15 @@ def main():
                     evidence = answer.get('evidence', [])
                     caveats = answer.get('caveats', [])
                     quality_score = result.get('quality_score', 0)
+                    comparison_table = answer.get('comparison_table', None)
                     
                     render_chat_message(
                         message_type="assistant",
                         content=conclusion,
                         evidence=evidence,
                         caveats=caveats,
-                        quality_score=quality_score
+                        quality_score=quality_score,
+                        comparison_table=comparison_table
                     )
                 else:
                     render_chat_message(
@@ -640,6 +658,7 @@ def main():
                         evidence = answer.get('evidence', [])
                         caveats = answer.get('caveats', [])
                         quality_score = result.get('quality_score', 0)
+                        comparison_table = answer.get('comparison_table', None)
                         
                         # AI 답변 표시
                         render_chat_message(
@@ -647,7 +666,8 @@ def main():
                             content=conclusion,
                             evidence=evidence,
                             caveats=caveats,
-                            quality_score=quality_score
+                            quality_score=quality_score,
+                            comparison_table=comparison_table
                         )
                     else:
                         render_chat_message(

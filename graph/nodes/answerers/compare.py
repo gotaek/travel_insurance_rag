@@ -37,7 +37,10 @@ def _parse_llm_response_structured(llm, prompt: str, emergency_fallback: bool = 
             "evidence": response.evidence,
             "caveats": response.caveats,
             "quotes": response.quotes,
-            "comparison_table": response.comparison_table
+            "comparison_table": {
+                "headers": response.comparison_table.headers,
+                "rows": response.comparison_table.rows
+            }
         }
     except Exception as e:
         # structured output 실패 시 기본 구조로 fallback

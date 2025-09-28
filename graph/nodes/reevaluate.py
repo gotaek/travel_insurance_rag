@@ -3,24 +3,31 @@ import json
 import logging
 from app.deps import get_llm
 from graph.models import QualityEvaluationResponse
+from graph.config_manager import get_system_config
 
 # 로깅 설정
 logger = logging.getLogger(__name__)
 
-# 상수 정의
+# 상수 정의 (기본값, 실제로는 설정에서 가져옴)
 QUALITY_THRESHOLD = 0.7
-MAX_REPLAN_ATTEMPTS = 3
+MAX_REPLAN_ATTEMPTS = 1
 
 def reevaluate_node(state: Dict[str, Any]) -> Dict[str, Any]:
     """
     LLM 기반 답변 품질 평가 및 재검색 필요성 판단 (무한루프 방지 포함)
     """
+    # 시스템 설정 가져오기
+    config = get_system_config()
+    
     question = state.get("question", "")
     answer = state.get("draft_answer", {})
     citations = state.get("citations", [])
     passages = state.get("refined", [])
     replan_count = state.get("replan_count", 0)
-    max_attempts = state.get("max_replan_attempts", MAX_REPLAN_ATTEMPTS)
+    max_attempts = state.get("max_replan_attempts", config.get_max_replan_attempts())
+    quality_threshold = config.get_quality_threshold()
+    emergency_threshold = config.get_emergency_fallback_threshold()
+    max_structured_failures = config.get_max_structured_failures()
     
     logger.info(f"🔍 [Reevaluate] 시작 - 재검색 횟수: {replan_count}/{max_attempts}")
     logger.info(f"🔍 [Reevaluate] 질문: '{question[:100]}...'")
@@ -41,11 +48,10 @@ def reevaluate_node(state: Dict[str, Any]) -> Dict[str, Any]:
     
     # 긴급 탈출 로직: 연속 구조화 실패 감지
     structured_failure_count = state.get("structured_failure_count", 0)
-    max_structured_failures = state.get("max_structured_failures", 2)
     emergency_fallback_used = state.get("emergency_fallback_used", False)
     
-    # 성능 최적화: 3번째 사이클부터는 품질 평가 없이 바로 답변 제공
-    if replan_count >= 3:
+    # 성능 최적화: 긴급 탈출 임계값부터는 품질 평가 없이 바로 답변 제공
+    if replan_count >= emergency_threshold:
         logger.warning(f"🚨 [Reevaluate] 재검색 횟수가 {replan_count}회에 도달 - 품질 평가 없이 답변 완료")
         return {
             **state,
@@ -67,11 +73,11 @@ def reevaluate_node(state: Dict[str, Any]) -> Dict[str, Any]:
             "emergency_fallback_used": True
         }
     
-    # LLM을 사용한 품질 평가 (3번째 사이클 이전에만)
+    # LLM을 사용한 품질 평가 (긴급 탈출 임계값 이전에만)
     logger.info(f"🔍 [Reevaluate] 답변 품질 평가 시작 - 질문: {question[:50]}... (재검색 횟수: {replan_count})")
     logger.debug(f"🔍 [Reevaluate] 추출된 답변 텍스트: {answer_text[:100]}..." if answer_text else "답변 텍스트가 비어있음")
     logger.debug(f"🔍 [Reevaluate] 답변 원본 타입: {type(answer)}, 내용: {str(answer)[:100]}...")
-    quality_result = _evaluate_answer_quality(question, answer_text, citations, passages)
+    quality_result = _evaluate_answer_quality(question, answer_text, citations, passages, quality_threshold)
     
     # 재검색 횟수 체크 및 무한루프 방지
     needs_replan = quality_result["needs_replan"] and replan_count < max_attempts
@@ -87,15 +93,15 @@ def reevaluate_node(state: Dict[str, Any]) -> Dict[str, Any]:
     if answer_text and answer_text.strip() and quality_result["score"] < 0.3:
         logger.warning(f"🔍 [Reevaluate] 답변이 존재하지만 낮은 점수({quality_result['score']:.2f}) - 최소 점수 0.3으로 조정")
         quality_result["score"] = 0.3
-        if quality_result["score"] >= QUALITY_THRESHOLD:
+        if quality_result["score"] >= quality_threshold:
             needs_replan = False
     
-    # 추가 안전장치: 재검색 횟수가 2회 이상이면 더 관대하게 평가 (3번째 사이클 이전에만)
-    if replan_count >= 2 and replan_count < 3 and answer_text and answer_text.strip():
-        logger.warning(f"🔍 [Reevaluate] 재검색 횟수가 {replan_count}회로 높음 - 더 관대하게 평가")
-        quality_result["score"] = max(quality_result["score"], 0.6)
-        if quality_result["score"] >= QUALITY_THRESHOLD:
-            needs_replan = False
+    # 2번째 사이클에서는 무조건 답변 제공 (관대한 평가)
+    if replan_count >= 1 and answer_text and answer_text.strip():
+        logger.warning(f"🔍 [Reevaluate] 2번째 사이클 이상 - 무조건 답변 제공 (재검색 횟수: {replan_count})")
+        quality_result["score"] = max(quality_result["score"], 0.8)  # 높은 점수로 설정
+        needs_replan = False  # 재검색 중단
+        logger.info(f"🔍 [Reevaluate] 2번째 사이클 답변 제공 - 점수: {quality_result['score']:.2f}")
     
     logger.info(f"🔍 [Reevaluate] 품질 점수: {quality_result['score']:.2f}, 재검색 필요: {needs_replan}, 재검색 횟수: {replan_count}/{max_attempts}")
     
@@ -105,10 +111,10 @@ def reevaluate_node(state: Dict[str, Any]) -> Dict[str, Any]:
         "quality_feedback": quality_result["feedback"],
         "needs_replan": needs_replan,
         "replan_query": quality_result["replan_query"],
-        "final_answer": answer if quality_result["score"] >= QUALITY_THRESHOLD or replan_count >= max_attempts else None
+        "final_answer": answer if quality_result["score"] >= quality_threshold or replan_count >= max_attempts else None
     }
 
-def _evaluate_answer_quality(question: str, answer: str, citations: List[Dict[str, Any]], passages: List[Dict[str, Any]]) -> Dict[str, Any]:
+def _evaluate_answer_quality(question: str, answer: str, citations: List[Dict[str, Any]], passages: List[Dict[str, Any]], quality_threshold: float = 0.7) -> Dict[str, Any]:
     """
     LLM을 사용하여 답변 품질을 평가하고 재검색 필요성을 판단
     """
@@ -122,28 +128,29 @@ def _evaluate_answer_quality(question: str, answer: str, citations: List[Dict[st
 인용 정보: {len(citations)}개
 검색된 문서: {len(passages)}개
 
-**중요**: 답변이 비어있지 않은 경우, 내용을 충분히 고려하여 평가해주세요. 
-답변이 실제로 존재하고 질문에 관련된 내용이 있다면 0점을 주지 마세요.
+**평가 시 주의사항**:
+- 답변이 완벽하지 않아도, 질문에 부분적으로라도 관련된 내용을 담고 있으면 점수를 주세요.
+- 답변이 비어있지 않다면 기본적으로 0.5점 이상을 부여해주세요.
+- 인용이 부족하거나 완전성이 떨어져도, 답변이 일정 부분 유용하면 재검색 없이 그대로 인정할 수 있습니다.
 
-다음 기준으로 평가해주세요:
+평가 기준 (각 0-1):
+1. **정확성**: 질문에 어느 정도라도 정확히 답하고 있는가?
+2. **완전성**: 답변이 충분히 상세하거나, 최소한 핵심은 전달되는가?
+3. **관련성**: 여행자보험 도메인과 관련된 답변인가?
+4. **인용 품질**: 적절한 인용이 있는가? (없어도 감점은 하되 0점은 아님)
 
-1. **정확성 (0-1)**: 답변이 질문에 정확히 답하고 있는가?
-2. **완전성 (0-1)**: 답변이 충분히 상세하고 완전한가?
-3. **관련성 (0-1)**: 답변이 여행자보험과 관련된 내용인가?
-4. **인용 품질 (0-1)**: 적절한 인용이 포함되어 있는가?
+총 점수는 0-1 사이 값으로, 0.5 이상이면 기본적으로 "수용 가능", 0.7 이상이면 "양호"로 간주합니다.
 
-총 점수는 0-1 사이의 값으로, 0.7 이상이면 양호한 답변으로 간주합니다.
+**재검색이 필요한 경우** (더 완화된 기준):
+- 답변이 완전히 비어 있거나 무의미한 경우
+- 답변이 질문과 전혀 무관한 경우
+- 답변이 지나치게 모호하거나 오해를 불러올 정도로 불완전한 경우
+- 반드시 최신 정보(예: 여행지 현황, 뉴스 등)가 필요한 질문인데 최신성이 없는 경우
 
-**재검색이 필요한 경우**:
-- 답변이 실제로 비어있거나 의미가 없는 경우
-- 답변이 질문과 전혀 관련이 없는 경우
-- 답변이 불완전하거나 부정확한 경우
-- 더 최신 정보가 필요한 경우
-
-다음 정보를 제공해주세요:
-- score: 0.0-1.0 사이의 품질 점수
+출력 형식(JSON):
+- score: 0.0~1.0 사이 품질 점수
 - feedback: 품질 평가 상세 설명
-- needs_replan: 재검색 필요 여부 (true/false)
+- needs_replan: true/false
 - replan_query: 재검색이 필요한 경우 새로운 검색 질문 (없으면 null)
 """
 
@@ -165,7 +172,7 @@ def _evaluate_answer_quality(question: str, answer: str, citations: List[Dict[st
             
         needs_replan = response.needs_replan
         if not isinstance(needs_replan, bool):
-            needs_replan = score < QUALITY_THRESHOLD
+            needs_replan = score < quality_threshold
             logger.warning(f"유효하지 않은 needs_replan: {needs_replan}, 점수 기반으로 설정")
             
         replan_query = response.replan_query
@@ -181,9 +188,9 @@ def _evaluate_answer_quality(question: str, answer: str, citations: List[Dict[st
         
     except Exception as e:
         logger.error(f"LLM 품질 평가 실패, fallback 사용: {str(e)}")
-        return _fallback_evaluate(question, answer, citations, passages)
+        return _fallback_evaluate(question, answer, citations, passages, quality_threshold)
 
-def _fallback_evaluate(question: str, answer: str, citations: List[Dict[str, Any]], passages: List[Dict[str, Any]]) -> Dict[str, Any]:
+def _fallback_evaluate(question: str, answer: str, citations: List[Dict[str, Any]], passages: List[Dict[str, Any]], quality_threshold: float = 0.7) -> Dict[str, Any]:
     """
     LLM 호출 실패 시 사용하는 간단한 휴리스틱 평가
     """
@@ -223,7 +230,7 @@ def _fallback_evaluate(question: str, answer: str, citations: List[Dict[str, Any
     # 점수 제한
     score = min(score, 1.0)
     
-    needs_replan = score < QUALITY_THRESHOLD
+    needs_replan = score < quality_threshold
     replan_query = question if needs_replan else ""
     
     logger.info(f"Fallback 평가 완료 - 점수: {score:.2f}, 재검색 필요: {needs_replan}")

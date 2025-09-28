@@ -51,6 +51,7 @@ def _parse_llm_response_fallback(llm, prompt: str) -> Dict[str, Any]:
             "evidence": ["Fallback 파싱으로 생성된 답변"],
             "caveats": ["원본 structured output이 실패하여 일반 파싱을 사용했습니다."],
             "quotes": [],
+            "web_quotes": [],
             "recommendations": [],
             "web_info": {}
         }
@@ -62,6 +63,7 @@ def _parse_llm_response_fallback(llm, prompt: str) -> Dict[str, Any]:
             "evidence": [f"Fallback 파싱도 실패: {str(fallback_error)[:100]}"],
             "caveats": [f"상세 오류: {str(fallback_error)}", "추가 확인이 필요합니다."],
             "quotes": [],
+            "web_quotes": [],
             "recommendations": [],
             "web_info": {}
         }
@@ -78,6 +80,7 @@ def _parse_llm_response_structured(llm, prompt: str, emergency_fallback: bool = 
             "evidence": response.evidence,
             "caveats": response.caveats,
             "quotes": response.quotes,
+            "web_quotes": response.web_quotes,
             "recommendations": response.recommendations,
             "web_info": response.web_info
         }
@@ -208,6 +211,24 @@ def recommend_node(state: Dict[str, Any]) -> Dict[str, Any]:
                 for p in passages[:3]  # 상위 3개만
             ]
         
+        # 웹 검색 결과를 web_quotes에 추가 (웹 검색 결과가 있을 때만)
+        if web_results and not answer.get("web_quotes"):
+            answer["web_quotes"] = [
+                {
+                    "text": result.get("snippet", "")[:200] + "...",
+                    "source": f"{result.get('title', '제목 없음')}_{result.get('url', 'URL 없음')}"
+                }
+                for result in web_results[:3]  # 상위 3개만
+            ]
+        
+        # web_info 필드가 Dict 타입인 경우 WebInfo 객체로 변환
+        if isinstance(answer.get("web_info"), dict):
+            web_info_dict = answer["web_info"]
+            answer["web_info"] = {
+                "latest_news": web_info_dict.get("latest_news", ""),
+                "travel_alerts": web_info_dict.get("travel_alerts", "")
+            }
+        
         # 성공 시 구조화 실패 카운터 리셋
         return {
             **state, 
@@ -224,6 +245,7 @@ def recommend_node(state: Dict[str, Any]) -> Dict[str, Any]:
             "evidence": ["LLM 호출 중 오류가 발생했습니다."],
             "caveats": ["추가 확인이 필요합니다.", f"오류: {str(e)}"],
             "quotes": [],
+            "web_quotes": [],
             "recommendations": [],
             "web_info": {}
         }

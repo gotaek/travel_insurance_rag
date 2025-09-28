@@ -13,6 +13,7 @@ from graph.nodes.reevaluate import reevaluate_node
 from graph.nodes.replan import replan_node
 from graph.nodes.trace import wrap_with_trace
 from graph.langsmith_integration import get_langsmith_callbacks, is_langsmith_enabled
+from graph.config_manager import get_system_config
 
 def _decide_answer_node(state: RAGState) -> str:
     intent = state.get("intent", "qa")
@@ -29,9 +30,12 @@ def _needs_web_edge(state: RAGState) -> str:
 
 def _quality_check_edge(state: RAGState) -> str:
     """품질 평가 후 분기 결정 (무한루프 방지 포함)"""
+    # 시스템 설정 가져오기
+    config = get_system_config()
+    
     needs_replan = state.get("needs_replan", False)
     replan_count = state.get("replan_count", 0)
-    max_attempts = state.get("max_replan_attempts", 3)
+    max_attempts = state.get("max_replan_attempts", config.get_max_replan_attempts())
     
     print(f"🔍 _quality_check_edge 호출 - needs_replan: {needs_replan}, replan_count: {replan_count}, max_attempts: {max_attempts}")
     

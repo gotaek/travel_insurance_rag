@@ -30,23 +30,54 @@ class AnswerResponse(BaseModel):
     quotes: List[QuoteInfo] = Field(description="인용 정보 목록", default_factory=list)
 
 
+class ComparisonTable(BaseModel):
+    """비교 표 데이터 모델 - additionalProperties 방지"""
+    model_config = ConfigDict(extra='ignore')
+    
+    headers: List[str] = Field(description="표 헤더 목록", default_factory=list)
+    rows: List[List[str]] = Field(description="표 행 데이터", default_factory=list)
+
+
 class CompareResponse(BaseModel):
     """비교 답변 응답 모델"""
     conclusion: str = Field(description="비교 결과 핵심 결론", default="비교 분석을 완료할 수 없습니다.")
     evidence: List[str] = Field(description="근거 정보 목록", default_factory=list)
     caveats: List[str] = Field(description="주의사항 목록", default_factory=list)
     quotes: List[QuoteInfo] = Field(description="인용 정보 목록", default_factory=list)
-    comparison_table: Dict[str, Any] = Field(description="비교 표 데이터", default_factory=dict)
+    comparison_table: ComparisonTable = Field(description="비교 표 데이터", default_factory=ComparisonTable)
+
+
+class RecommendationItem(BaseModel):
+    """추천 항목 모델 - additionalProperties 방지"""
+    model_config = ConfigDict(extra='ignore')
+    
+    type: str = Field(description="추천 유형", default="")
+    name: str = Field(description="추천 대상명", default="")
+    reason: str = Field(description="추천 이유", default="")
+    coverage: str = Field(description="보장 내용", default="")
+    priority: str = Field(description="우선순위", default="보통")
+    category: str = Field(description="카테고리", default="")
+
+
+class WebInfo(BaseModel):
+    """웹 검색 정보 모델 - additionalProperties 방지"""
+    model_config = ConfigDict(extra='ignore')
+    
+    latest_news: str = Field(description="최신 뉴스", default="")
+    travel_alerts: str = Field(description="여행 경보", default="")
 
 
 class RecommendResponse(BaseModel):
     """추천 답변 응답 모델"""
+    model_config = ConfigDict(extra='ignore')
+    
     conclusion: str = Field(description="추천 결과 핵심 결론", default="추천 정보를 제공할 수 없습니다.")
     evidence: List[str] = Field(description="근거 정보 목록", default_factory=list)
     caveats: List[str] = Field(description="주의사항 목록", default_factory=list)
     quotes: List[QuoteInfo] = Field(description="인용 정보 목록", default_factory=list)
-    recommendations: List[Dict[str, Any]] = Field(description="추천 항목 목록", default_factory=list)
-    web_info: Dict[str, Any] = Field(description="웹 검색 정보", default_factory=dict)
+    web_quotes: List[QuoteInfo] = Field(description="웹 검색 결과 인용 목록", default_factory=list)
+    recommendations: List[RecommendationItem] = Field(description="추천 항목 목록", default_factory=list)
+    web_info: WebInfo = Field(description="웹 검색 정보", default_factory=WebInfo)
 
 
 class QualityEvaluationResponse(BaseModel):

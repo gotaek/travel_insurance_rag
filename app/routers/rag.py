@@ -72,7 +72,7 @@ def rag_ask(req: AskRequest):
             "conversation_context": conversation_context,
             # 무한루프 방지를 위한 초기값 설정
             "replan_count": 0,
-            "max_replan_attempts": 3,
+            "max_replan_attempts": 2,
             "needs_replan": False
         }
         
@@ -194,7 +194,7 @@ def rag_multiturn_ask(req: MultiTurnAskRequest):
             "conversation_context": conversation_context,
             # 무한루프 방지를 위한 초기값 설정
             "replan_count": 0,
-            "max_replan_attempts": 3,
+            "max_replan_attempts": 2,
             "needs_replan": False
         }
         

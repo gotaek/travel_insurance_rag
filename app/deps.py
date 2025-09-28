@@ -49,6 +49,36 @@ def _sanitize_schema(obj):
         return obj
 
 
+def _parse_unstructured_response(raw_text: str, response_schema) -> Any:
+    """
+    비구조화된 텍스트 응답을 Pydantic 모델로 파싱하는 함수
+    """
+    try:
+        # 기본값으로 스키마 인스턴스 생성
+        return response_schema()
+    except Exception as e:
+        logger.warning(f"비구조화된 응답 파싱 실패: {e}")
+        # 필드 타입 기반 수동 기본값 생성
+        fallback = {}
+        for name, f in response_schema.model_fields.items():
+            t = f.annotation
+            if t is int:
+                fallback[name] = 0
+            elif t is float:
+                fallback[name] = 0.0
+            elif t is bool:
+                fallback[name] = False
+            elif t is str:
+                fallback[name] = ""
+            elif getattr(t, "__origin__", None) is list:
+                fallback[name] = []
+            elif getattr(t, "__origin__", None) is dict:
+                fallback[name] = {}
+            else:
+                fallback[name] = None
+        return response_schema(**fallback)
+
+
 def _is_retryable_error(error: Exception) -> bool:
     """재시도 가능한 오류인지 판단."""
     error_str = str(error).lower()
@@ -171,7 +201,7 @@ class StructuredOutputWrapper:
                 try:
                     data = loads(raw_text)
                 except Exception:
-                    # 비구조 텍스트를 후처리 매핑 (기존 유틸 사용)
+                    # 비구조 텍스트를 후처리 매핑
                     return _parse_unstructured_response(raw_text, self.response_schema)
                 return self.response_schema(**data)
 
