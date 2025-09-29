@@ -84,15 +84,23 @@ def _parse_llm_response_structured(llm, prompt: str, emergency_fallback: bool = 
 
 def qa_node(state: Dict[str, Any]) -> Dict[str, Any]:
     """
-    QA 에이전트: 질문에 대한 직접적인 답변 생성
+    QA 에이전트: 질문에 대한 직접적인 답변 생성 (verify_refine 정보 활용)
     """
     import logging
     logger = logging.getLogger(__name__)
     
     question = state.get("question", "")
-    passages = state.get("passages", [])
+    refined = state.get("refined", [])
     
-    logger.info(f"🔍 [QA] 시작 - 질문: '{question[:100]}...', 패시지 수: {len(passages)}")
+    # verify_refine에서 생성된 정보들 활용
+    citations = state.get("citations", [])
+    warnings = state.get("warnings", [])
+    verification_status = state.get("verification_status", "pass")
+    policy_disclaimer = state.get("policy_disclaimer", "")
+    metrics = state.get("metrics", {})
+    
+    logger.info(f"🔍 [QA] 시작 - 질문: '{question[:100]}...', 정제된 문서 수: {len(refined)}")
+    logger.info(f"🔍 [QA] 검증 상태: {verification_status}, 경고 수: {len(warnings)}, 인용 수: {len(citations)}")
     
     # 긴급 탈출 로직: 연속 구조화 실패 감지
     structured_failure_count = state.get("structured_failure_count", 0)
@@ -101,8 +109,8 @@ def qa_node(state: Dict[str, Any]) -> Dict[str, Any]:
     
     logger.info(f"🔍 [QA] 구조화 실패 횟수: {structured_failure_count}/{max_structured_failures}, 긴급 탈출: {emergency_fallback_used}")
     
-    # 컨텍스트 포맷팅
-    context = _format_context(passages)
+    # 컨텍스트 포맷팅 (refined 사용)
+    context = _format_context(refined)
     
     # 프롬프트 로드
     system_prompt = _load_prompt("system_core")
@@ -173,16 +181,46 @@ def qa_node(state: Dict[str, Any]) -> Dict[str, Any]:
                     "structured_failure_count": new_failure_count
                 }
         
-        # 출처 정보 추가 (quotes가 비어있을 때만)
-        if passages and not answer.get("quotes"):
+        # verify_refine의 citations 활용 (우선순위)
+        if citations and not answer.get("quotes"):
+            answer["quotes"] = [
+                {
+                    "text": c.get("snippet", "")[:200] + "...",
+                    "source": f"{c.get('insurer', '')}_{c.get('doc_id', '알 수 없음')}_페이지{c.get('page', '?')}"
+                }
+                for c in citations[:3]  # 상위 3개만
+            ]
+            logger.info(f"🔍 [QA] 표준화된 인용 정보 추가 - {len(answer['quotes'])}개")
+        elif refined and not answer.get("quotes"):
+            # fallback: refined에서 직접 생성
             answer["quotes"] = [
                 {
                     "text": p.get("text", "")[:200] + "...",
                     "source": f"{p.get('doc_id', '알 수 없음')}_페이지{p.get('page', '?')}"
                 }
-                for p in passages[:3]  # 상위 3개만
+                for p in refined[:3]  # 상위 3개만
             ]
-            logger.info(f"🔍 [QA] 출처 정보 추가 - {len(answer['quotes'])}개")
+            logger.info(f"🔍 [QA] fallback 출처 정보 추가 - {len(answer['quotes'])}개")
+        
+        # verify_refine의 warnings를 caveats에 반영
+        if warnings:
+            warning_caveats = [f"⚠️ {warning}" for warning in warnings[:2]]  # 상위 2개 경고만
+            answer["caveats"].extend(warning_caveats)
+            logger.info(f"🔍 [QA] 검증 경고 반영 - {len(warning_caveats)}개")
+        
+        # policy_disclaimer를 caveats에 추가
+        if policy_disclaimer:
+            answer["caveats"].append(f"📋 {policy_disclaimer}")
+            logger.info(f"🔍 [QA] 법적 면책 조항 추가")
+        
+        # verification_status에 따른 답변 조정
+        if verification_status == "fail":
+            answer["conclusion"] = "충분한 정보를 찾을 수 없어 정확한 답변을 제공하기 어렵습니다."
+            answer["caveats"].append("추가 검색이 필요할 수 있습니다.")
+            logger.warning(f"🔍 [QA] 검증 실패로 인한 답변 조정")
+        elif verification_status == "warn":
+            answer["caveats"].append("일부 정보가 부족하거나 상충될 수 있습니다.")
+            logger.info(f"🔍 [QA] 검증 경고로 인한 주의사항 추가")
         
         # 성공 시 구조화 실패 카운터 리셋
         logger.info(f"🔍 [QA] 답변 생성 완료 - 결론 길이: {len(answer.get('conclusion', ''))}자")
