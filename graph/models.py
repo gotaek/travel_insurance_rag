@@ -15,6 +15,22 @@ class QuoteInfo(BaseModel):
     source: str = Field(description="인용 출처", default="")
 
 
+class EvidenceInfo(BaseModel):
+    """근거 정보 서브모델 - additionalProperties 방지"""
+    model_config = ConfigDict(extra='ignore')
+    
+    text: str = Field(description="근거 텍스트", default="")
+    source: str = Field(description="근거 출처", default="")
+
+
+class CaveatInfo(BaseModel):
+    """주의사항 정보 서브모델 - additionalProperties 방지"""
+    model_config = ConfigDict(extra='ignore')
+    
+    text: str = Field(description="주의사항 텍스트", default="")
+    source: str = Field(description="주의사항 출처", default="")
+
+
 class PlannerResponse(BaseModel):
     """Planner 노드 응답 모델"""
     intent: str = Field(description="질문 의도 (qa/summarize/compare/recommend)", default="qa")
@@ -25,8 +41,8 @@ class PlannerResponse(BaseModel):
 class AnswerResponse(BaseModel):
     """기본 답변 응답 모델 (QA, Summarize 공통)"""
     conclusion: str = Field(description="답변의 핵심 결론", default="답변을 생성할 수 없습니다.")
-    evidence: List[str] = Field(description="근거 정보 목록", default_factory=list)
-    caveats: List[str] = Field(description="주의사항 목록", default_factory=list)
+    evidence: List[EvidenceInfo] = Field(description="근거 정보 목록", default_factory=list)
+    caveats: List[CaveatInfo] = Field(description="주의사항 목록", default_factory=list)
     quotes: List[QuoteInfo] = Field(description="인용 정보 목록", default_factory=list)
 
 
@@ -41,8 +57,8 @@ class ComparisonTable(BaseModel):
 class CompareResponse(BaseModel):
     """비교 답변 응답 모델"""
     conclusion: str = Field(description="비교 결과 핵심 결론", default="비교 분석을 완료할 수 없습니다.")
-    evidence: List[str] = Field(description="근거 정보 목록", default_factory=list)
-    caveats: List[str] = Field(description="주의사항 목록", default_factory=list)
+    evidence: List[EvidenceInfo] = Field(description="근거 정보 목록", default_factory=list)
+    caveats: List[CaveatInfo] = Field(description="주의사항 목록", default_factory=list)
     quotes: List[QuoteInfo] = Field(description="인용 정보 목록", default_factory=list)
     comparison_table: ComparisonTable = Field(description="비교 표 데이터", default_factory=ComparisonTable)
 
@@ -72,8 +88,8 @@ class RecommendResponse(BaseModel):
     model_config = ConfigDict(extra='ignore')
     
     conclusion: str = Field(description="추천 결과 핵심 결론", default="추천 정보를 제공할 수 없습니다.")
-    evidence: List[str] = Field(description="근거 정보 목록", default_factory=list)
-    caveats: List[str] = Field(description="주의사항 목록", default_factory=list)
+    evidence: List[EvidenceInfo] = Field(description="근거 정보 목록", default_factory=list)
+    caveats: List[CaveatInfo] = Field(description="주의사항 목록", default_factory=list)
     quotes: List[QuoteInfo] = Field(description="인용 정보 목록", default_factory=list)
     web_quotes: List[QuoteInfo] = Field(description="웹 검색 결과 인용 목록", default_factory=list)
     recommendations: List[RecommendationItem] = Field(description="추천 항목 목록", default_factory=list)

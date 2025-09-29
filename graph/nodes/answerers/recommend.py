@@ -2,7 +2,7 @@ from typing import Dict, Any
 import json
 from pathlib import Path
 from app.deps import get_llm
-from graph.models import RecommendResponse
+from graph.models import RecommendResponse, EvidenceInfo, CaveatInfo
 
 def _load_prompt(prompt_name: str) -> str:
     """프롬프트 파일 로드"""
@@ -48,8 +48,8 @@ def _parse_llm_response_fallback(llm, prompt: str) -> Dict[str, Any]:
         # 간단한 텍스트 기반 fallback
         return {
             "conclusion": response_text[:500] if response_text else "추천을 생성했습니다.",
-            "evidence": ["Fallback 파싱으로 생성된 답변"],
-            "caveats": ["원본 structured output이 실패하여 일반 파싱을 사용했습니다."],
+            "evidence": [EvidenceInfo(text="Fallback 파싱으로 생성된 답변", source="Fallback 시스템")],
+            "caveats": [CaveatInfo(text="원본 structured output이 실패하여 일반 파싱을 사용했습니다.", source="Fallback 시스템")],
             "quotes": [],
             "web_quotes": [],
             "recommendations": [],
@@ -60,8 +60,11 @@ def _parse_llm_response_fallback(llm, prompt: str) -> Dict[str, Any]:
         print(f"❌ Recommend 노드 fallback도 실패: {str(fallback_error)}")
         return {
             "conclusion": "답변을 생성하는 중 오류가 발생했습니다.",
-            "evidence": [f"Fallback 파싱도 실패: {str(fallback_error)[:100]}"],
-            "caveats": [f"상세 오류: {str(fallback_error)}", "추가 확인이 필요합니다."],
+            "evidence": [EvidenceInfo(text=f"Fallback 파싱도 실패: {str(fallback_error)[:100]}", source="Fallback 시스템")],
+            "caveats": [
+                CaveatInfo(text=f"상세 오류: {str(fallback_error)}", source="Fallback 시스템"),
+                CaveatInfo(text="추가 확인이 필요합니다.", source="Fallback 시스템")
+            ],
             "quotes": [],
             "web_quotes": [],
             "recommendations": [],
@@ -92,11 +95,11 @@ def _parse_llm_response_structured(llm, prompt: str, emergency_fallback: bool = 
         if "quota" in error_str or "limit" in error_str or "429" in error_str or "exceeded" in error_str:
             return {
                 "conclusion": "죄송합니다. 현재 API 할당량이 초과되어 답변을 생성할 수 없습니다.",
-                "evidence": ["Gemini API 일일 할당량 초과"],
+                "evidence": [EvidenceInfo(text="Gemini API 일일 할당량 초과", source="API 시스템")],
                 "caveats": [
-                    "잠시 후 다시 시도해주세요.",
-                    "API 할당량이 복구되면 정상적으로 답변을 제공할 수 있습니다.",
-                    "오류 코드: 429 (Quota Exceeded)"
+                    CaveatInfo(text="잠시 후 다시 시도해주세요.", source="API 시스템"),
+                    CaveatInfo(text="API 할당량이 복구되면 정상적으로 답변을 제공할 수 있습니다.", source="API 시스템"),
+                    CaveatInfo(text="오류 코드: 429 (Quota Exceeded)", source="API 시스템")
                 ],
                 "quotes": [],
                 "recommendations": [],
@@ -105,10 +108,10 @@ def _parse_llm_response_structured(llm, prompt: str, emergency_fallback: bool = 
         elif "404" in error_str or "publisher" in error_str or "model" in error_str:
             return {
                 "conclusion": "모델 설정 오류로 인해 답변을 생성할 수 없습니다.",
-                "evidence": ["Gemini 모델 설정 오류"],
+                "evidence": [EvidenceInfo(text="Gemini 모델 설정 오류", source="API 시스템")],
                 "caveats": [
-                    "모델 이름을 확인해주세요.",
-                    "잠시 후 다시 시도해주세요."
+                    CaveatInfo(text="모델 이름을 확인해주세요.", source="API 시스템"),
+                    CaveatInfo(text="잠시 후 다시 시도해주세요.", source="API 시스템")
                 ],
                 "quotes": [],
                 "recommendations": [],
@@ -233,22 +236,22 @@ def recommend_node(state: Dict[str, Any]) -> Dict[str, Any]:
         
         # verify_refine의 warnings를 caveats에 반영
         if warnings:
-            warning_caveats = [f"⚠️ {warning}" for warning in warnings[:2]]  # 상위 2개 경고만
+            warning_caveats = [CaveatInfo(text=f"⚠️ {warning}", source="검증 시스템") for warning in warnings[:2]]  # 상위 2개 경고만
             answer["caveats"].extend(warning_caveats)
             print(f"🔍 [Recommend Node] 검증 경고 반영 - {len(warning_caveats)}개")
         
         # policy_disclaimer를 caveats에 추가
         if policy_disclaimer:
-            answer["caveats"].append(f"📋 {policy_disclaimer}")
+            answer["caveats"].append(CaveatInfo(text=f"📋 {policy_disclaimer}", source="법적 면책 조항"))
             print(f"🔍 [Recommend Node] 법적 면책 조항 추가")
         
         # verification_status에 따른 답변 조정
         if verification_status == "fail":
             answer["conclusion"] = "충분한 정보를 찾을 수 없어 정확한 추천을 제공하기 어렵습니다."
-            answer["caveats"].append("추가 검색이 필요할 수 있습니다.")
+            answer["caveats"].append(CaveatInfo(text="추가 검색이 필요할 수 있습니다.", source="검증 시스템"))
             print(f"🔍 [Recommend Node] 검증 실패로 인한 답변 조정")
         elif verification_status == "warn":
-            answer["caveats"].append("일부 정보가 부족하거나 상충될 수 있습니다.")
+            answer["caveats"].append(CaveatInfo(text="일부 정보가 부족하거나 상충될 수 있습니다.", source="검증 시스템"))
             print(f"🔍 [Recommend Node] 검증 경고로 인한 주의사항 추가")
         
         # 웹 검색 결과를 web_quotes에 추가 (웹 검색 결과가 있을 때만)
@@ -282,8 +285,11 @@ def recommend_node(state: Dict[str, Any]) -> Dict[str, Any]:
         # LLM 호출 실패 시 fallback
         fallback_answer = {
             "conclusion": f"추천 생성 중 오류가 발생했습니다: '{question}'",
-            "evidence": ["LLM 호출 중 오류가 발생했습니다."],
-            "caveats": ["추가 확인이 필요합니다.", f"오류: {str(e)}"],
+            "evidence": [EvidenceInfo(text="LLM 호출 중 오류가 발생했습니다.", source="시스템 오류")],
+            "caveats": [
+                CaveatInfo(text="추가 확인이 필요합니다.", source="시스템 오류"),
+                CaveatInfo(text=f"오류: {str(e)}", source="시스템 오류")
+            ],
             "quotes": [],
             "web_quotes": [],
             "recommendations": [],
