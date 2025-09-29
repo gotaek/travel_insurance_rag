@@ -24,7 +24,6 @@ def _parse_llm_response_fallback(llm, prompt: str, question: str) -> Dict[str, A
             "conclusion": response_text[:500] if response_text else "답변을 생성했습니다.",
             "evidence": [EvidenceInfo(text="Fallback 파싱으로 생성된 답변", source="Fallback 시스템")],
             "caveats": [CaveatInfo(text="원본 structured output이 실패하여 일반 파싱을 사용했습니다.", source="Fallback 시스템")],
-            "quotes": [],
             "web_quotes": [],
             "web_info": {}
         }
@@ -44,7 +43,6 @@ def _parse_llm_response_structured(llm, prompt: str, emergency_fallback: bool = 
             "conclusion": response.conclusion,
             "evidence": response.evidence,
             "caveats": response.caveats,
-            "quotes": response.quotes,
             "web_quotes": [],
             "web_info": {}
         }
@@ -62,7 +60,6 @@ def _parse_llm_response_structured(llm, prompt: str, emergency_fallback: bool = 
                     CaveatInfo(text="API 할당량이 복구되면 정상적으로 답변을 제공할 수 있습니다.", source="API 시스템"),
                     CaveatInfo(text="오류 코드: 429 (Quota Exceeded)", source="API 시스템")
                 ],
-                "quotes": []
             }
         else:
             # structured output 실패 시 fallback 파싱 시도

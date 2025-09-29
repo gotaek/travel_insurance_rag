@@ -46,7 +46,6 @@ def get_simple_fallback_response(question: str, node_type: str = "QA") -> Dict[s
         "conclusion": f"질문을 확인했습니다: '{question[:100]}{'...' if len(question) > 100 else ''}'",
         "evidence": [EvidenceInfo(text=f"{node_type} 시스템 응답", source="시스템")],
         "caveats": [CaveatInfo(text="추가 확인이 필요할 수 있습니다.", source="시스템")],
-        "quotes": [],
         "web_quotes": [],
         "web_info": {},
         "recommendations": [] if node_type == "Recommend" else None,

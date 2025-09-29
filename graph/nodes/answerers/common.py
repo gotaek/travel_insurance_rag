@@ -46,22 +46,23 @@ def format_context_optimized(passages: List[Dict]) -> str:
     return "\n".join(context_parts)
 
 def process_verify_refine_data(state: Dict[str, Any], answer: Dict[str, Any]) -> Dict[str, Any]:
-    """verify_refine 데이터를 효율적으로 처리"""
+    """verify_refine 데이터를 효율적으로 처리 (evidence 개수 제한)"""
     # verify_refine에서 생성된 정보들
     citations = state.get("citations", [])
     warnings = state.get("warnings", [])
     verification_status = state.get("verification_status", "pass")
     policy_disclaimer = state.get("policy_disclaimer", "")
     
-    # citations 활용 (우선순위)
-    if citations and not answer.get("quotes"):
-        answer["quotes"] = [
-            {
-                "text": c.get("snippet", "")[:200] + "...",
-                "source": f"{c.get('insurer', '')}_{c.get('doc_id', '알 수 없음')}_페이지{c.get('page', '?')}"
-            }
+    # citations를 evidence에 추가 (quotes 대신 evidence 사용)
+    if citations and not answer.get("evidence"):
+        citation_evidence = [
+            EvidenceInfo(
+                text=c.get("snippet", "")[:200] + "...",
+                source=f"{c.get('insurer', '')}_{c.get('doc_id', '알 수 없음')}_페이지{c.get('page', '?')}"
+            )
             for c in citations[:3]  # 상위 3개만
         ]
+        answer["evidence"] = citation_evidence
     
     # warnings를 caveats에 반영
     if warnings:
@@ -81,6 +82,20 @@ def process_verify_refine_data(state: Dict[str, Any], answer: Dict[str, Any]) ->
         answer["caveats"].append(CaveatInfo(text="추가 검색이 필요할 수 있습니다.", source="검증 시스템"))
     elif verification_status == "warn":
         answer["caveats"].append(CaveatInfo(text="일부 정보가 부족하거나 상충될 수 있습니다.", source="검증 시스템"))
+    
+    # evidence 개수를 5개로 제한 (성능 최적화)
+    if "evidence" in answer and len(answer["evidence"]) > 5:
+        try:
+            # score 기준으로 정렬하여 상위 5개만 선택
+            sorted_evidence = sorted(
+                answer["evidence"], 
+                key=lambda x: getattr(x, 'score', 0) if hasattr(x, 'score') else 0, 
+                reverse=True
+            )
+            answer["evidence"] = sorted_evidence[:5]
+        except Exception:
+            # score가 없는 경우 단순히 앞의 5개만 선택
+            answer["evidence"] = answer["evidence"][:5]
     
     return answer
 
@@ -110,7 +125,6 @@ def handle_llm_error_optimized(error: Exception, question: str, node_type: str) 
                 CaveatInfo(text="잠시 후 다시 시도해주세요.", source="API 시스템"),
                 CaveatInfo(text="API 할당량이 복구되면 정상적으로 답변을 제공할 수 있습니다.", source="API 시스템")
             ],
-            "quotes": []
         }
     elif "404" in error_str or "publisher" in error_str or "model" in error_str:
         return {
@@ -120,7 +134,6 @@ def handle_llm_error_optimized(error: Exception, question: str, node_type: str) 
                 CaveatInfo(text="모델 이름을 확인해주세요.", source="API 시스템"),
                 CaveatInfo(text="잠시 후 다시 시도해주세요.", source="API 시스템")
             ],
-            "quotes": []
         }
     else:
         return get_simple_fallback_response(question, node_type)

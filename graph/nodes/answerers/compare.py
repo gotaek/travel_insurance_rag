@@ -24,7 +24,6 @@ def _parse_llm_response_structured(llm, prompt: str, emergency_fallback: bool = 
             "conclusion": response.conclusion,
             "evidence": response.evidence,
             "caveats": response.caveats,
-            "quotes": response.quotes,
             "web_quotes": [],
             "web_info": {},
             "comparison_table": {
@@ -46,7 +45,6 @@ def _parse_llm_response_structured(llm, prompt: str, emergency_fallback: bool = 
                     CaveatInfo(text="API 할당량이 복구되면 정상적으로 답변을 제공할 수 있습니다.", source="API 시스템"),
                     CaveatInfo(text="오류 코드: 429 (Quota Exceeded)", source="API 시스템")
                 ],
-                "quotes": [],
                 "web_quotes": [],
                 "web_info": {},
                 "comparison_table": {
@@ -62,7 +60,6 @@ def _parse_llm_response_structured(llm, prompt: str, emergency_fallback: bool = 
                     CaveatInfo(text="모델 이름을 확인해주세요.", source="API 시스템"),
                     CaveatInfo(text="잠시 후 다시 시도해주세요.", source="API 시스템")
                 ],
-                "quotes": [],
                 "web_quotes": [],
                 "web_info": {},
                 "comparison_table": {
@@ -78,7 +75,6 @@ def _parse_llm_response_structured(llm, prompt: str, emergency_fallback: bool = 
                     CaveatInfo(text=f"상세 오류: {str(e)}", source="시스템 오류"),
                     CaveatInfo(text="추가 확인이 필요합니다.", source="시스템 오류")
                 ],
-                "quotes": [],
                 "web_quotes": [],
                 "web_info": {},
                 "comparison_table": {

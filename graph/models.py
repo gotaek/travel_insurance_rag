@@ -51,7 +51,6 @@ class AnswerResponse(BaseModel):
     conclusion: str = Field(description="답변의 핵심 결론", default="답변을 생성할 수 없습니다.")
     evidence: List[EvidenceInfo] = Field(description="근거 정보 목록", default_factory=list)
     caveats: List[CaveatInfo] = Field(description="주의사항 목록", default_factory=list)
-    quotes: List[QuoteInfo] = Field(description="인용 정보 목록", default_factory=list)
     web_quotes: List[QuoteInfo] = Field(description="웹 검색 결과 인용 목록", default_factory=list)
     web_info: WebInfo = Field(description="웹 검색 정보", default_factory=WebInfo)
 
@@ -69,7 +68,6 @@ class CompareResponse(BaseModel):
     conclusion: str = Field(description="비교 결과 핵심 결론", default="비교 분석을 완료할 수 없습니다.")
     evidence: List[EvidenceInfo] = Field(description="근거 정보 목록", default_factory=list)
     caveats: List[CaveatInfo] = Field(description="주의사항 목록", default_factory=list)
-    quotes: List[QuoteInfo] = Field(description="인용 정보 목록", default_factory=list)
     web_quotes: List[QuoteInfo] = Field(description="웹 검색 결과 인용 목록", default_factory=list)
     web_info: WebInfo = Field(description="웹 검색 정보", default_factory=WebInfo)
     comparison_table: ComparisonTable = Field(description="비교 표 데이터", default_factory=ComparisonTable)
@@ -94,7 +92,6 @@ class RecommendResponse(BaseModel):
     conclusion: str = Field(description="추천 결과 핵심 결론", default="추천 정보를 제공할 수 없습니다.")
     evidence: List[EvidenceInfo] = Field(description="근거 정보 목록", default_factory=list)
     caveats: List[CaveatInfo] = Field(description="주의사항 목록", default_factory=list)
-    quotes: List[QuoteInfo] = Field(description="인용 정보 목록", default_factory=list)
     web_quotes: List[QuoteInfo] = Field(description="웹 검색 결과 인용 목록", default_factory=list)
     recommendations: List[RecommendationItem] = Field(description="추천 항목 목록", default_factory=list)
     web_info: WebInfo = Field(description="웹 검색 정보", default_factory=WebInfo)

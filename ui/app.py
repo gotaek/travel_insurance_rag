@@ -71,13 +71,35 @@ def render_chat_message(message_type: str, content: str,
     if evidence:
         with st.expander("📋 증거"):
             for i, ev in enumerate(evidence, 1):
-                st.write(f"{i}. {ev}")
+                if isinstance(ev, dict):
+                    # evidence가 객체인 경우
+                    text = ev.get('text', '')
+                    source = ev.get('source', '')
+                    if source:
+                        st.write(f"{i}. **{text}**")
+                        st.caption(f"   출처: {source}")
+                    else:
+                        st.write(f"{i}. {text}")
+                else:
+                    # evidence가 문자열인 경우 (기존 호환성)
+                    st.write(f"{i}. {ev}")
     
     # 주의사항 표시
     if caveats:
         with st.expander("⚠️ 주의사항"):
             for i, caveat in enumerate(caveats, 1):
-                st.write(f"{i}. {caveat}")
+                if isinstance(caveat, dict):
+                    # caveat이 객체인 경우
+                    text = caveat.get('text', '')
+                    source = caveat.get('source', '')
+                    if source:
+                        st.write(f"{i}. **{text}**")
+                        st.caption(f"   출처: {source}")
+                    else:
+                        st.write(f"{i}. {text}")
+                else:
+                    # caveat이 문자열인 경우 (기존 호환성)
+                    st.write(f"{i}. {caveat}")
     
     # 품질 점수 표시
     if quality_score is not None:
