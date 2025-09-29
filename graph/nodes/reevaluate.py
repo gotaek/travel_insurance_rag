@@ -1,7 +1,7 @@
 from typing import Dict, Any, List
 import json
 import logging
-from app.deps import get_llm
+from app.deps import get_reevaluate_llm
 from graph.models import QualityEvaluationResponse
 from graph.config_manager import get_system_config
 
@@ -155,7 +155,7 @@ def _evaluate_answer_quality(question: str, answer: str, citations: List[Dict[st
 
     try:
         logger.debug("LLM을 사용한 품질 평가 시작 (structured output)")
-        llm = get_llm()
+        llm = get_reevaluate_llm()  # Reevaluate 전용 LLM 사용 (Gemini 2.5 Flash-Lite)
         
         # structured output 사용
         structured_llm = llm.with_structured_output(QualityEvaluationResponse)

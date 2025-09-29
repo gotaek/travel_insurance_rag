@@ -125,6 +125,10 @@ class Settings(BaseSettings):
     GEMINI_MODEL: str = "gemini-2.5-flash"
     GEMINI_SKIP_MODEL_CHECK: bool = False  # 모델 검증 생략 여부
     GEMINI_FAST_MODE: bool = True  # 빠른 모드 (기본 모델만 사용)
+    
+    # 노드별 모델 설정
+    GEMINI_ANSWERER_MODEL: str = "gemini-2.5-flash"  # answerer용 모델
+    GEMINI_REEVALUATE_MODEL: str = "gemini-2.5-flash-lite"  # reevaluate용 모델
 
     TAVILY_API_KEY: str = ""
 
@@ -333,6 +337,11 @@ def _list_available_model_names(api_key: str) -> Optional[List[str]]:
         return None
 
 
+# 전역 LLM 인스턴스 캐시
+_cached_llm = None
+_cached_answerer_llm = None
+_cached_reevaluate_llm = None
+
 @lru_cache()
 def get_llm():
     s = get_settings()
@@ -456,6 +465,86 @@ def get_llm():
     error_msg = f"모든 Gemini 모델 시도 실패. {' | '.join(error_details)}"
     logger.error(error_msg)
     raise RuntimeError(error_msg)
+
+
+def get_cached_llm():
+    """캐시된 LLM 인스턴스 반환 (빠른 접근용)"""
+    global _cached_llm
+    if _cached_llm is None:
+        _cached_llm = get_llm()
+    return _cached_llm
+
+def get_answerer_llm():
+    """Answerer용 LLM 인스턴스 반환 (Gemini 2.5 Flash)"""
+    global _cached_answerer_llm
+    if _cached_answerer_llm is None:
+        _cached_answerer_llm = _get_llm_for_model("answerer")
+    return _cached_answerer_llm
+
+def get_reevaluate_llm():
+    """Reevaluate용 LLM 인스턴스 반환 (Gemini 2.5 Flash-Lite)"""
+    global _cached_reevaluate_llm
+    if _cached_reevaluate_llm is None:
+        _cached_reevaluate_llm = _get_llm_for_model("reevaluate")
+    return _cached_reevaluate_llm
+
+def _get_llm_for_model(node_type: str):
+    """노드 타입별 LLM 인스턴스 생성"""
+    s = get_settings()
+    if not s.GEMINI_API_KEY:
+        raise RuntimeError("GEMINI_API_KEY is not set in .env")
+
+    # 노드별 모델 선택
+    if node_type == "answerer":
+        model_name = s.GEMINI_ANSWERER_MODEL
+    elif node_type == "reevaluate":
+        model_name = s.GEMINI_REEVALUATE_MODEL
+    else:
+        model_name = s.GEMINI_MODEL  # 기본 모델
+
+    try:
+        if _USE_NEW_SDK:
+            client = genai.Client(api_key=s.GEMINI_API_KEY)
+        else:
+            genai.configure(api_key=s.GEMINI_API_KEY)
+            client = None
+    except Exception as e:
+        logger.error(f"SDK 초기화 실패: {e}")
+        raise RuntimeError(f"Gemini SDK 초기화 실패: {e}")
+
+    # 모델 테스트 및 생성
+    try:
+        if s.GEMINI_SKIP_MODEL_CHECK:
+            logger.info(f"모델 검증 생략: {model_name} 직접 사용 ({node_type})")
+            if _USE_NEW_SDK:
+                return LangSmithLLMWrapper(client, model_name)
+            else:
+                gm = genai.GenerativeModel(model_name)
+                return LangSmithLLMWrapper(gm, model_name)
+        else:
+            if _quick_model_test(model_name, client if _USE_NEW_SDK else genai, _USE_NEW_SDK):
+                logger.info(f"빠른 테스트 통과: {model_name} ({node_type})")
+                if _USE_NEW_SDK:
+                    return LangSmithLLMWrapper(client, model_name)
+                else:
+                    gm = genai.GenerativeModel(model_name)
+                    return LangSmithLLMWrapper(gm, model_name)
+            else:
+                logger.warning(f"빠른 테스트 실패: {model_name} ({node_type})")
+                # 폴백: 기본 모델 사용
+                return get_llm()
+    except Exception as e:
+        logger.error(f"{node_type} 모델 {model_name} 생성 실패: {e}")
+        # 폴백: 기본 모델 사용
+        return get_llm()
+
+def clear_llm_cache():
+    """LLM 캐시 초기화 (설정 변경 시 사용)"""
+    global _cached_llm, _cached_answerer_llm, _cached_reevaluate_llm
+    _cached_llm = None
+    _cached_answerer_llm = None
+    _cached_reevaluate_llm = None
+    get_llm.cache_clear()
 
 
 def get_available_models():

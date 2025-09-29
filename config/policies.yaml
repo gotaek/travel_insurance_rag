@@ -19,16 +19,16 @@ answer:
 # 의도별 요구사항 설정
 intent_requirements:
   qa:
-    min_context: 1
-    min_citations: 1
+    min_context: 3
+    min_citations: 3
     min_insurers: 1
   compare:
     min_context: 3
     min_citations: 3
     min_insurers: 2
   summary:
-    min_context: 2
-    min_citations: 2
+    min_context: 3
+    min_citations: 3
     min_insurers: 1
   recommend:
     min_context: 3
