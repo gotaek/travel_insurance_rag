@@ -37,7 +37,9 @@ def _parse_llm_response_fallback(llm, prompt: str) -> Dict[str, Any]:
             "conclusion": response_text[:500] if response_text else "답변을 생성했습니다.",
             "evidence": [EvidenceInfo(text="Fallback 파싱으로 생성된 답변", source="Fallback 시스템")],
             "caveats": [CaveatInfo(text="원본 structured output이 실패하여 일반 파싱을 사용했습니다.", source="Fallback 시스템")],
-            "quotes": []
+            "quotes": [],
+            "web_quotes": [],
+            "web_info": {}
         }
         
     except Exception as fallback_error:
@@ -49,7 +51,9 @@ def _parse_llm_response_fallback(llm, prompt: str) -> Dict[str, Any]:
                 CaveatInfo(text=f"상세 오류: {str(fallback_error)}", source="Fallback 시스템"),
                 CaveatInfo(text="추가 확인이 필요합니다.", source="Fallback 시스템")
             ],
-            "quotes": []
+            "quotes": [],
+            "web_quotes": [],
+            "web_info": {}
         }
 
 def _parse_llm_response_structured(llm, prompt: str, emergency_fallback: bool = False) -> Dict[str, Any]:
@@ -63,7 +67,9 @@ def _parse_llm_response_structured(llm, prompt: str, emergency_fallback: bool = 
             "conclusion": response.conclusion,
             "evidence": response.evidence,
             "caveats": response.caveats,
-            "quotes": response.quotes
+            "quotes": response.quotes,
+            "web_quotes": [],
+            "web_info": {}
         }
     except Exception as e:
         # structured output 실패 시 기본 구조로 fallback
@@ -199,7 +205,7 @@ def qa_node(state: Dict[str, Any]) -> Dict[str, Any]:
             answer["quotes"] = [
                 {
                     "text": p.get("text", "")[:200] + "...",
-                    "source": f"{p.get('doc_id', '알 수 없음')}_페이지{p.get('page', '?')}"
+                    "source": f"{p.get('insurer', '알 수 없음')}_{p.get('doc_id', '알 수 없음')}_페이지{p.get('page', '?')}"
                 }
                 for p in refined[:3]  # 상위 3개만
             ]
@@ -224,6 +230,13 @@ def qa_node(state: Dict[str, Any]) -> Dict[str, Any]:
         elif verification_status == "warn":
             answer["caveats"].append(CaveatInfo(text="일부 정보가 부족하거나 상충될 수 있습니다.", source="검증 시스템"))
             logger.info(f"🔍 [QA] 검증 경고로 인한 주의사항 추가")
+        
+        # web_info 기본값 설정 (QA는 웹 검색을 사용하지 않음)
+        if not answer.get("web_info"):
+            answer["web_info"] = {
+                "latest_news": "",
+                "travel_alerts": ""
+            }
         
         # 성공 시 구조화 실패 카운터 리셋
         logger.info(f"🔍 [QA] 답변 생성 완료 - 결론 길이: {len(answer.get('conclusion', ''))}자")

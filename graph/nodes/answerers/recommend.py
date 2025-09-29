@@ -228,7 +228,7 @@ def recommend_node(state: Dict[str, Any]) -> Dict[str, Any]:
             answer["quotes"] = [
                 {
                     "text": p.get("text", "")[:200] + "...",
-                    "source": f"{p.get('doc_id', '알 수 없음')}_페이지{p.get('page', '?')}"
+                    "source": f"{p.get('insurer', '알 수 없음')}_{p.get('doc_id', '알 수 없음')}_페이지{p.get('page', '?')}"
                 }
                 for p in refined[:3]  # 상위 3개만
             ]
@@ -259,7 +259,7 @@ def recommend_node(state: Dict[str, Any]) -> Dict[str, Any]:
             answer["web_quotes"] = [
                 {
                     "text": result.get("snippet", "")[:200] + "...",
-                    "source": f"{result.get('title', '제목 없음')}_{result.get('url', 'URL 없음')}"
+                    "source": f"웹검색_{result.get('title', '제목 없음')}_{result.get('url', 'URL 없음')}"
                 }
                 for result in web_results[:3]  # 상위 3개만
             ]
@@ -270,6 +270,12 @@ def recommend_node(state: Dict[str, Any]) -> Dict[str, Any]:
             answer["web_info"] = {
                 "latest_news": web_info_dict.get("latest_news", ""),
                 "travel_alerts": web_info_dict.get("travel_alerts", "")
+            }
+        elif not answer.get("web_info"):
+            # web_info가 없는 경우 기본값 설정
+            answer["web_info"] = {
+                "latest_news": "",
+                "travel_alerts": ""
             }
         
         # 성공 시 구조화 실패 카운터 리셋

@@ -37,6 +37,8 @@ def _parse_llm_response_structured(llm, prompt: str, emergency_fallback: bool = 
             "evidence": response.evidence,
             "caveats": response.caveats,
             "quotes": response.quotes,
+            "web_quotes": [],
+            "web_info": {},
             "comparison_table": {
                 "headers": response.comparison_table.headers,
                 "rows": response.comparison_table.rows
@@ -57,6 +59,8 @@ def _parse_llm_response_structured(llm, prompt: str, emergency_fallback: bool = 
                     CaveatInfo(text="오류 코드: 429 (Quota Exceeded)", source="API 시스템")
                 ],
                 "quotes": [],
+                "web_quotes": [],
+                "web_info": {},
                 "comparison_table": {
                     "headers": ["항목", "비교 결과"],
                     "rows": [["API 할당량 초과", "서비스 일시 중단 (429)"]]
@@ -71,6 +75,8 @@ def _parse_llm_response_structured(llm, prompt: str, emergency_fallback: bool = 
                     CaveatInfo(text="잠시 후 다시 시도해주세요.", source="API 시스템")
                 ],
                 "quotes": [],
+                "web_quotes": [],
+                "web_info": {},
                 "comparison_table": {
                     "headers": ["항목", "비교 결과"],
                     "rows": [["모델 오류", "설정 확인 필요 (404)"]]
@@ -85,6 +91,8 @@ def _parse_llm_response_structured(llm, prompt: str, emergency_fallback: bool = 
                     CaveatInfo(text="추가 확인이 필요합니다.", source="시스템 오류")
                 ],
                 "quotes": [],
+                "web_quotes": [],
+                "web_info": {},
                 "comparison_table": {
                     "headers": ["항목", "비교 결과"],
                     "rows": [["오류", f"파싱 실패: {str(e)[:50]}"]]
@@ -193,7 +201,7 @@ def compare_node(state: Dict[str, Any]) -> Dict[str, Any]:
             answer["quotes"] = [
                 {
                     "text": p.get("text", "")[:200] + "...",
-                    "source": f"{p.get('doc_id', '알 수 없음')}_페이지{p.get('page', '?')}"
+                    "source": f"{p.get('insurer', '알 수 없음')}_{p.get('doc_id', '알 수 없음')}_페이지{p.get('page', '?')}"
                 }
                 for p in refined[:3]  # 상위 3개만
             ]
@@ -219,6 +227,13 @@ def compare_node(state: Dict[str, Any]) -> Dict[str, Any]:
             answer["caveats"].append(CaveatInfo(text="일부 정보가 부족하거나 상충될 수 있습니다.", source="검증 시스템"))
             print(f"🔍 [Compare Node] 검증 경고로 인한 주의사항 추가")
         
+        # web_info 기본값 설정 (Compare는 웹 검색을 사용하지 않음)
+        if not answer.get("web_info"):
+            answer["web_info"] = {
+                "latest_news": "",
+                "travel_alerts": ""
+            }
+        
         # 성공 시 구조화 실패 카운터 리셋
         return {
             **state, 
@@ -238,6 +253,8 @@ def compare_node(state: Dict[str, Any]) -> Dict[str, Any]:
                 CaveatInfo(text=f"오류: {str(e)}", source="시스템 오류")
             ],
             "quotes": [],
+            "web_quotes": [],
+            "web_info": {},
             "comparison_table": {
                 "headers": ["항목", "비교 결과"],
                 "rows": [["오류", "LLM 호출 실패"]]
