@@ -35,6 +35,7 @@ EXCLUDED_DOMAINS = [
 def websearch_node(state: Dict[str, Any]) -> Dict[str, Any]:
     """
     Tavily API를 사용한 여행자보험 도메인 특화 웹 검색 노드.
+    시간 관련 매개변수를 활용하여 최적화된 검색을 수행합니다.
     
     Args:
         state: RAG 상태 딕셔너리
@@ -62,6 +63,9 @@ def websearch_node(state: Dict[str, Any]) -> Dict[str, Any]:
         # 도메인 특화 검색 쿼리 구성
         search_queries = _build_search_queries(state)
         
+        # 시간 기반 검색 매개변수 설정
+        search_params = _get_optimized_search_params(state)
+        
         # 성능 최적화: 단일 쿼리로 검색 (다중 쿼리 제거)
         all_results = []
         try:
@@ -69,18 +73,40 @@ def websearch_node(state: Dict[str, Any]) -> Dict[str, Any]:
             primary_query = search_queries[0] if search_queries else f"여행자보험 {state.get('question', '')}"
             
             logger.debug(f"웹 검색 쿼리: {primary_query}")
+            logger.debug(f"검색 매개변수: {search_params}")
             
-            # 단일 API 호출로 최적화
+            # 최적화된 API 호출
             response = client.search(
                 query=primary_query,
                 search_depth="basic",
                 max_results=8,  # 결과 수 증가로 품질 향상
-                exclude_domains=EXCLUDED_DOMAINS
+                exclude_domains=EXCLUDED_DOMAINS,
+                **search_params  # 시간 관련 매개변수 포함
             )
             
             # 결과 처리 및 품질 평가
             processed_results = _process_search_results(response.get("results", []), state)
             all_results.extend(processed_results)
+            
+            # 뉴스 검색이 필요한 경우 추가 검색 수행
+            if search_params.get("topic") == "news" and len(processed_results) < 3:
+                logger.debug("뉴스 검색 결과 부족, 추가 검색 수행")
+                try:
+                    # 뉴스 전용 검색 수행
+                    news_response = client.search(
+                        query=f"여행자보험 뉴스 {state.get('question', '')}",
+                        search_depth="basic",
+                        max_results=5,
+                        topic="news",
+                        days=7,  # 최근 7일간의 뉴스
+                        exclude_domains=EXCLUDED_DOMAINS
+                    )
+                    
+                    news_results = _process_search_results(news_response.get("results", []), state)
+                    all_results.extend(news_results)
+                    
+                except Exception as news_e:
+                    logger.warning(f"뉴스 검색 중 오류: {str(news_e)}")
             
         except Exception as e:
             logger.warning(f"웹 검색 실행 중 오류: {str(e)}")
@@ -157,9 +183,73 @@ def _build_search_queries(state: Dict[str, Any]) -> List[str]:
     
     return limited_queries
 
+def _get_optimized_search_params(state: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    질문 유형과 의도에 따라 최적화된 검색 매개변수를 설정합니다.
+    Tavily API의 시간 관련 매개변수를 활용합니다.
+    
+    Args:
+        state: RAG 상태 딕셔너리
+        
+    Returns:
+        최적화된 검색 매개변수 딕셔너리
+    """
+    question = state.get("question", "").lower()
+    intent = state.get("intent", "qa")
+    
+    # 기본 매개변수
+    params = {}
+    
+    # 뉴스 관련 키워드 감지
+    news_keywords = ["뉴스", "최신", "시장", "동향", "트렌드", "변화", "업데이트", "발표", "공지"]
+    is_news_query = any(keyword in question for keyword in news_keywords)
+    
+    # 의도별 시간 범위 설정
+    if intent == "compare" or is_news_query:
+        # 비교나 뉴스 관련 질문은 최근 정보가 중요
+        params["topic"] = "news"
+        params["days"] = 30  # 최근 30일간의 뉴스
+        params["time_range"] = "month"  # 최근 한 달
+    elif intent == "recommend":
+        # 추천은 최신 상품 정보가 중요
+        params["topic"] = "news"
+        params["days"] = 14  # 최근 2주간의 정보
+        params["time_range"] = "week"  # 최근 일주일
+    elif intent == "summary":
+        # 요약은 일반적인 정보도 포함
+        params["time_range"] = "year"  # 최근 1년
+    else:  # qa
+        # 일반 질문은 최근 정보 우선
+        params["time_range"] = "month"  # 최근 한 달
+    
+    # 특정 날짜 범위가 필요한 경우 (예: 특정 기간의 보험 상품 비교)
+    if "2024" in question or "2025" in question:
+        # 특정 연도 언급 시 해당 연도 범위 설정
+        if "2025" in question:
+            params["start_date"] = "2025-01-01"
+            params["end_date"] = "2025-12-31"
+        elif "2024" in question:
+            params["start_date"] = "2024-01-01"
+            params["end_date"] = "2024-12-31"
+    
+    # 여행 시즌별 최적화
+    current_month = datetime.now().month
+    if current_month in [6, 7, 8]:  # 여름 휴가철
+        if "여름" in question or "휴가" in question:
+            params["time_range"] = "month"
+            params["days"] = 30
+    elif current_month in [12, 1, 2]:  # 겨울 휴가철
+        if "겨울" in question or "설날" in question or "연말" in question:
+            params["time_range"] = "month"
+            params["days"] = 30
+    
+    logger.debug(f"설정된 검색 매개변수: {params}")
+    return params
+
 def _process_search_results(results: List[Dict], state: Dict[str, Any]) -> List[Dict[str, Any]]:
     """
     검색 결과를 처리하고 품질을 평가합니다.
+    시간 정보를 활용하여 최신성 점수를 추가합니다.
     
     Args:
         results: Tavily API 검색 결과
@@ -170,6 +260,7 @@ def _process_search_results(results: List[Dict], state: Dict[str, Any]) -> List[
     """
     processed_results = []
     question = state.get("question", "").lower()
+    intent = state.get("intent", "qa")
     
     for result in results:
         # 기본 정보 추출
@@ -177,12 +268,16 @@ def _process_search_results(results: List[Dict], state: Dict[str, Any]) -> List[
         title = result.get("title", "")
         content = result.get("content", "")
         score = result.get("score", 0.0)
+        published_date = result.get("published_date", "")
         
         # 여행자보험 관련성 점수 계산
         relevance_score = _calculate_relevance_score(title, content, question)
         
-        # 최종 점수 계산 (Tavily 점수 70% + 관련성 점수 30%)
-        final_score = (score * 0.7) + (relevance_score * 0.3)
+        # 시간 기반 신선도 점수 계산
+        freshness_score = _calculate_freshness_score(published_date, intent)
+        
+        # 최종 점수 계산 (Tavily 점수 50% + 관련성 점수 30% + 신선도 점수 20%)
+        final_score = (score * 0.5) + (relevance_score * 0.3) + (freshness_score * 0.2)
         
         # 최소 점수 완화 (0.3 → 0.2)
         if final_score >= 0.2:
@@ -193,6 +288,8 @@ def _process_search_results(results: List[Dict], state: Dict[str, Any]) -> List[
                 "snippet": content[:500] + "..." if len(content) > 500 else content,  # 스니펫 길이 제한
                 "score_web": final_score,
                 "relevance_score": relevance_score,
+                "freshness_score": freshness_score,
+                "published_date": published_date,
                 "timestamp": datetime.now().isoformat()
             })
     
@@ -226,6 +323,52 @@ def _calculate_relevance_score(title: str, content: str, question: str) -> float
         base_score += 0.3
     
     return min(base_score, 1.0)
+
+def _calculate_freshness_score(published_date: str, intent: str) -> float:
+    """
+    게시일을 기반으로 신선도 점수를 계산합니다.
+    
+    Args:
+        published_date: 게시일 문자열 (YYYY-MM-DD 형식)
+        intent: 사용자 의도
+        
+    Returns:
+        신선도 점수 (0.0 ~ 1.0)
+    """
+    if not published_date:
+        return 0.5  # 날짜 정보가 없으면 중간 점수
+    
+    try:
+        # 날짜 파싱
+        pub_date = datetime.strptime(published_date, "%Y-%m-%d")
+        current_date = datetime.now()
+        days_diff = (current_date - pub_date).days
+        
+        # 의도별 신선도 가중치
+        if intent == "compare" or intent == "recommend":
+            # 비교나 추천은 최신 정보가 중요
+            if days_diff <= 7:  # 1주일 이내
+                return 1.0
+            elif days_diff <= 30:  # 1개월 이내
+                return 0.8
+            elif days_diff <= 90:  # 3개월 이내
+                return 0.6
+            else:
+                return 0.3
+        else:  # qa, summary
+            # 일반 질문은 상대적으로 오래된 정보도 유용
+            if days_diff <= 30:  # 1개월 이내
+                return 1.0
+            elif days_diff <= 180:  # 6개월 이내
+                return 0.8
+            elif days_diff <= 365:  # 1년 이내
+                return 0.6
+            else:
+                return 0.4
+                
+    except ValueError:
+        # 날짜 파싱 실패 시 중간 점수 반환
+        return 0.5
 
 def _deduplicate_and_rank(results: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """
@@ -310,6 +453,7 @@ def _save_to_cache(state: Dict[str, Any], results: List[Dict[str, Any]]) -> None
 def _generate_cache_key(state: Dict[str, Any]) -> str:
     """
     상태 정보를 기반으로 캐시 키를 생성합니다.
+    시간 매개변수도 고려하여 캐시 키를 생성합니다.
     
     Args:
         state: RAG 상태 딕셔너리
@@ -320,8 +464,12 @@ def _generate_cache_key(state: Dict[str, Any]) -> str:
     question = state.get("question", "")
     intent = state.get("intent", "qa")
     
-    # 질문과 의도를 해시화하여 캐시 키 생성
-    key_data = f"websearch:{intent}:{question}"
+    # 시간 매개변수 정보 추가
+    search_params = _get_optimized_search_params(state)
+    time_info = f"{search_params.get('time_range', 'default')}:{search_params.get('days', 'default')}"
+    
+    # 질문, 의도, 시간 정보를 해시화하여 캐시 키 생성
+    key_data = f"websearch:{intent}:{time_info}:{question}"
     return hashlib.md5(key_data.encode('utf-8')).hexdigest()
 
 def _get_fallback_results(state: Dict[str, Any]) -> Dict[str, Any]:

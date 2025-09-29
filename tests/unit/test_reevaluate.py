@@ -268,7 +268,7 @@ class TestConstants:
     
     def test_max_replan_attempts(self):
         """최대 재검색 횟수 테스트"""
-        assert MAX_REPLAN_ATTEMPTS == 3
+        assert MAX_REPLAN_ATTEMPTS == 2
 
 
 class TestIntegration:

@@ -51,10 +51,9 @@ source_weights:
 system:
   # 재검색 관련 설정
   replan:
-    max_attempts: 3                    # 최대 재검색 시도 횟수
+    max_attempts: 2                    # 최대 재검색 시도 횟수 (2번째 사이클부터 무조건 답변 제공)
     max_structured_failures: 2         # 최대 연속 구조화 실패 허용 횟수
     quality_threshold: 0.7             # 품질 평가 임계값
-    emergency_fallback_threshold: 3     # 긴급 탈출 임계값 (재검색 횟수)
   
   # 성능 최적화 설정
   performance:

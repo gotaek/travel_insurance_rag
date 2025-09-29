@@ -43,10 +43,9 @@ class ConfigManager:
         return {
             "system": {
                 "replan": {
-                    "max_attempts": 3,
+                    "max_attempts": 2,
                     "max_structured_failures": 2,
-                    "quality_threshold": 0.7,
-                    "emergency_fallback_threshold": 3
+                    "quality_threshold": 0.7
                 },
                 "performance": {
                     "enable_llm_classification": True,
@@ -76,9 +75,6 @@ class ConfigManager:
         """품질 평가 임계값을 반환합니다."""
         return self.get_replan_config().get("quality_threshold", 0.7)
     
-    def get_emergency_fallback_threshold(self) -> int:
-        """긴급 탈출 임계값을 반환합니다."""
-        return self.get_replan_config().get("emergency_fallback_threshold", 3)
     
     def is_llm_classification_enabled(self) -> bool:
         """LLM 분류 사용 여부를 반환합니다."""

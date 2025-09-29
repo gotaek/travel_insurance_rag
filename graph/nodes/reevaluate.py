@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 
 # 상수 정의 (기본값, 실제로는 설정에서 가져옴)
 QUALITY_THRESHOLD = 0.7
-MAX_REPLAN_ATTEMPTS = 1
+MAX_REPLAN_ATTEMPTS = 2
 
 def reevaluate_node(state: Dict[str, Any]) -> Dict[str, Any]:
     """
@@ -26,7 +26,6 @@ def reevaluate_node(state: Dict[str, Any]) -> Dict[str, Any]:
     replan_count = state.get("replan_count", 0)
     max_attempts = state.get("max_replan_attempts", config.get_max_replan_attempts())
     quality_threshold = config.get_quality_threshold()
-    emergency_threshold = config.get_emergency_fallback_threshold()
     max_structured_failures = config.get_max_structured_failures()
     
     logger.info(f"🔍 [Reevaluate] 시작 - 재검색 횟수: {replan_count}/{max_attempts}")
@@ -50,8 +49,8 @@ def reevaluate_node(state: Dict[str, Any]) -> Dict[str, Any]:
     structured_failure_count = state.get("structured_failure_count", 0)
     emergency_fallback_used = state.get("emergency_fallback_used", False)
     
-    # 성능 최적화: 긴급 탈출 임계값부터는 품질 평가 없이 바로 답변 제공
-    if replan_count >= emergency_threshold:
+    # 성능 최적화: 최대 재검색 횟수에 도달하면 품질 평가 없이 바로 답변 제공
+    if replan_count >= max_attempts:
         logger.warning(f"🚨 [Reevaluate] 재검색 횟수가 {replan_count}회에 도달 - 품질 평가 없이 답변 완료")
         return {
             **state,
