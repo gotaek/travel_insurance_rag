@@ -101,18 +101,24 @@ def process_verify_refine_data(state: Dict[str, Any], answer: Dict[str, Any]) ->
     return answer
 
 def create_optimized_prompt(system_prompt: str, task_prompt: str, question: str, context: str) -> str:
-    """최적화된 프롬프트 생성"""
+    """최적화된 프롬프트 생성 - 프롬프트 엔지니어링 원칙 적용"""
     return f"""{system_prompt}
 
 {task_prompt}
 
-## 질문
+## 📝 사용자 질문
 {question}
 
-## 참고 문서
+## 📚 참고 문서 (출처 기반 답변 필수)
 {context}
 
-위 문서를 참고하여 답변해주세요."""
+**중요 지침:**
+1. 위 문서의 정보만을 근거로 답변하세요
+2. 모든 정보는 정확한 출처와 함께 제시하세요
+3. 불확실한 정보는 "추가 확인 필요"로 표기하세요
+4. JSON 형식을 정확히 준수하여 답변하세요
+
+위 문서를 참고하여 정확하고 신뢰할 수 있는 답변을 제공해주세요."""
 
 def handle_llm_error_optimized(error: Exception, question: str, node_type: str) -> Dict[str, Any]:
     """최적화된 LLM 오류 처리"""

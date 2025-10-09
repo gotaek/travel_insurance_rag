@@ -1,47 +1,47 @@
+# Web Framework
 fastapi
 uvicorn[standard]
 pydantic-settings
 python-dotenv
 
+# LangChain & LangGraph
 langgraph>=0.0.50
 langchain-core>=0.2.0
 
+# Vector Database & Search
 chromadb
 rank_bm25
 numpy
+scikit-learn
 
+# Progress & Utilities
 tqdm
-
 PyYAML
 
+# AI/ML Models
 google-generativeai
 google-genai>=0.2.0
+FlagEmbedding
+torch
 
-pandas
+# Data Processing & Analysis
+pandas>=2.0.0
 datasets
 ragas
 
-# parsing
+# Document Parsing
 pymupdf           
 python-magic
-pandas
 
-# embeddings / vector
-FlagEmbedding
-torch
-chromadb
-numpy
-tqdm
-scikit-learn
-
-# Cross-encoder dependencies removed for simplified version
-
+# Web UI & Visualization
 streamlit
 plotly
+
+# External APIs
 requests
 tavily-python
 
-# Redis for session management and caching
+# Caching & Session Management
 redis>=4.5.0
 hiredis>=2.0.0
 
@@ -50,5 +50,9 @@ pytest>=8.0.0
 pytest-cov>=4.0.0
 pytest-html>=3.0.0
 
-# LangSmith for monitoring and tracing
+# Monitoring & Tracing
 langsmith>=0.1.0
+
+# Additional dependencies for evaluation
+matplotlib>=3.5.0
+seaborn>=0.11.0

@@ -24,11 +24,12 @@ services:
       - .env
     volumes:
       - ./:/app  # 개발 편의: 소스 실시간 반영
+      - eval_data:/app/eval/out  # eval 결과 데이터 영구 저장
     command: >
       uvicorn app.main:app
       --host 0.0.0.0 --port 8000 --reload
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://localhost:8000/healthz || exit 1"]
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8000/health || exit 1"]
       interval: 10s
       timeout: 3s
       retries: 5
@@ -36,6 +37,7 @@ services:
     environment:
       - PYTHONPATH=/app
       - REDIS_URL=redis://redis:6379
+      - EVAL_OUTPUT_DIR=/app/eval/out
     depends_on:
       redis:
         condition: service_healthy
@@ -61,3 +63,4 @@ services:
 
 volumes:
   redis_data:
+  eval_data:  # eval 결과 데이터 영구 저장
