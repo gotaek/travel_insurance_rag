@@ -122,13 +122,13 @@ class Settings(BaseSettings):
     DOCUMENT_DIR: str = "data/documents"
 
     GEMINI_API_KEY: str = ""
-    GEMINI_MODEL: str = "gemini-2.5-flash"
+    GEMINI_MODEL: str = "gemini-2.5-flash-lite"  # 기본 모델을 lite로 변경
     GEMINI_SKIP_MODEL_CHECK: bool = False  # 모델 검증 생략 여부
     GEMINI_FAST_MODE: bool = True  # 빠른 모드 (기본 모델만 사용)
     
     # 노드별 모델 설정
     GEMINI_ANSWERER_MODEL: str = "gemini-2.5-flash"  # answerer용 모델
-    GEMINI_REEVALUATE_MODEL: str = "gemini-2.5-flash-lite"  # reevaluate용 모델
+    GEMINI_LITE_MODEL: str = "gemini-2.5-flash-lite"  # lite 모델 (planner, reevaluate용)
 
     TAVILY_API_KEY: str = ""
 
@@ -269,14 +269,14 @@ def _normalize_candidates(name: str, fast_mode: bool = False) -> List[str]:
         base = base.split("models/", 1)[1]
     
     if fast_mode:
-        # 빠른 모드: 기본 모델만 사용
-        return [base] if base else ["gemini-2.5-flash"]
+        # 빠른 모드: 기본 모델만 사용 (lite 모델 우선)
+        return [base] if base else ["gemini-2.5-flash-lite"]
     
     prefer = [
         base,
+        "gemini-2.5-flash-lite",  # lite 모델을 우선순위로 변경
         "gemini-2.5-flash",
         "gemini-2.5-pro",
-        "gemini-2.5-flash-lite",
         "gemini-2.0-flash",
         "gemini-2.0-pro",
     ]
@@ -341,6 +341,7 @@ def _list_available_model_names(api_key: str) -> Optional[List[str]]:
 _cached_llm = None
 _cached_answerer_llm = None
 _cached_reevaluate_llm = None
+_cached_planner_llm = None
 
 @lru_cache()
 def get_llm():
@@ -488,6 +489,13 @@ def get_reevaluate_llm():
         _cached_reevaluate_llm = _get_llm_for_model("reevaluate")
     return _cached_reevaluate_llm
 
+def get_planner_llm():
+    """Planner용 LLM 인스턴스 반환 (Gemini 2.5 Flash-Lite)"""
+    global _cached_planner_llm
+    if _cached_planner_llm is None:
+        _cached_planner_llm = _get_llm_for_model("planner")
+    return _cached_planner_llm
+
 def _get_llm_for_model(node_type: str):
     """노드 타입별 LLM 인스턴스 생성"""
     s = get_settings()
@@ -498,7 +506,9 @@ def _get_llm_for_model(node_type: str):
     if node_type == "answerer":
         model_name = s.GEMINI_ANSWERER_MODEL
     elif node_type == "reevaluate":
-        model_name = s.GEMINI_REEVALUATE_MODEL
+        model_name = s.GEMINI_LITE_MODEL
+    elif node_type == "planner":
+        model_name = s.GEMINI_LITE_MODEL  # planner도 lite 모델 사용
     else:
         model_name = s.GEMINI_MODEL  # 기본 모델
 
@@ -540,10 +550,11 @@ def _get_llm_for_model(node_type: str):
 
 def clear_llm_cache():
     """LLM 캐시 초기화 (설정 변경 시 사용)"""
-    global _cached_llm, _cached_answerer_llm, _cached_reevaluate_llm
+    global _cached_llm, _cached_answerer_llm, _cached_reevaluate_llm, _cached_planner_llm
     _cached_llm = None
     _cached_answerer_llm = None
     _cached_reevaluate_llm = None
+    _cached_planner_llm = None
     get_llm.cache_clear()
 
 

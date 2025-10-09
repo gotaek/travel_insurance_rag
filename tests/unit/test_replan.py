@@ -125,7 +125,7 @@ class TestGenerateReplanQuery:
         }
         '''
         
-        with patch('graph.nodes.replan.get_llm') as mock_get_llm:
+        with patch('graph.nodes.replan.get_planner_llm') as mock_get_llm:
             mock_llm = Mock()
             mock_llm.generate_content.return_value = mock_response
             mock_get_llm.return_value = mock_llm
@@ -153,7 +153,7 @@ class TestGenerateReplanQuery:
         ```
         '''
         
-        with patch('graph.nodes.replan.get_llm') as mock_get_llm:
+        with patch('graph.nodes.replan.get_planner_llm') as mock_get_llm:
             mock_llm = Mock()
             mock_llm.generate_content.return_value = mock_response
             mock_get_llm.return_value = mock_llm
@@ -178,7 +178,7 @@ class TestGenerateReplanQuery:
         }
         '''
         
-        with patch('graph.nodes.replan.get_llm') as mock_get_llm:
+        with patch('graph.nodes.replan.get_planner_llm') as mock_get_llm:
             mock_llm = Mock()
             mock_llm.generate_content.return_value = mock_response
             mock_get_llm.return_value = mock_llm
@@ -196,7 +196,7 @@ class TestGenerateReplanQuery:
         feedback = "피드백"
         suggested_query = "제안 질문"
         
-        with patch('graph.nodes.replan.get_llm') as mock_get_llm:
+        with patch('graph.nodes.replan.get_planner_llm') as mock_get_llm:
             mock_get_llm.side_effect = Exception("LLM 호출 실패")
             
             with patch('graph.nodes.replan._fallback_replan') as mock_fallback:

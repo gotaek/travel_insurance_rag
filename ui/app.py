@@ -646,88 +646,68 @@ def main():
                 content=question
             )
             
-            # 진행 상황 표시
-            progress_bar = st.progress(0)
-            status_text = st.empty()
-            
-            try:
-                start_time = time.time()
-                
-                # 진행 상황 표시
-                status_text.text("🔍 질문을 분석하고 있습니다...")
-                progress_bar.progress(20)
-                
-                result = monitor.send_question(question, include_context)
-                
-                # 진행 상황 업데이트
-                status_text.text("📊 파이프라인을 실행하고 있습니다...")
-                progress_bar.progress(60)
-                end_time = time.time()
-                
-                progress_bar.progress(100)
-                status_text.text("✅ 답변 생성 완료!")
-                
-                if result:
-                    # 답변 내용
-                    answer = None
-                    if 'final_answer' in result and result['final_answer']:
-                        answer = result['final_answer']
-                    elif 'draft_answer' in result and result['draft_answer']:
-                        answer = result['draft_answer']
+            # 로딩 표시
+            with st.spinner("🔍 관련 자료를 찾고 답변을 생성하고 있습니다..."):
+                try:
+                    start_time = time.time()
                     
-                    if answer:
-                        conclusion = answer.get('conclusion', answer.get('content', '답변을 생성할 수 없습니다.'))
-                        evidence = answer.get('evidence', [])
-                        caveats = answer.get('caveats', [])
-                        quality_score = result.get('quality_score', 0)
-                        comparison_table = answer.get('comparison_table', None)
+                    result = monitor.send_question(question, include_context)
+                    
+                    end_time = time.time()
+                    
+                    if result:
+                        # 답변 내용
+                        answer = None
+                        if 'final_answer' in result and result['final_answer']:
+                            answer = result['final_answer']
+                        elif 'draft_answer' in result and result['draft_answer']:
+                            answer = result['draft_answer']
                         
-                        # AI 답변 표시
-                        render_chat_message(
-                            message_type="assistant",
-                            content=conclusion,
-                            evidence=evidence,
-                            caveats=caveats,
-                            quality_score=quality_score,
-                            comparison_table=comparison_table
-                        )
+                        if answer:
+                            conclusion = answer.get('conclusion', answer.get('content', '답변을 생성할 수 없습니다.'))
+                            evidence = answer.get('evidence', [])
+                            caveats = answer.get('caveats', [])
+                            quality_score = result.get('quality_score', 0)
+                            comparison_table = answer.get('comparison_table', None)
+                            
+                            # AI 답변 표시
+                            render_chat_message(
+                                message_type="assistant",
+                                content=conclusion,
+                                evidence=evidence,
+                                caveats=caveats,
+                                quality_score=quality_score,
+                                comparison_table=comparison_table
+                            )
+                        else:
+                            render_chat_message(
+                                message_type="assistant",
+                                content="답변을 생성할 수 없습니다.",
+                                error=True
+                            )
+                        
+                        # 대화 히스토리에 추가
+                        monitor.conversation_history.append({
+                            'question': question,
+                            'result': result,
+                            'timestamp': datetime.now()
+                        })
+                        
+                        # 페이지 새로고침하여 모니터링 탭 업데이트
+                        st.rerun()
                     else:
                         render_chat_message(
                             message_type="assistant",
-                            content="답변을 생성할 수 없습니다.",
+                            content="답변 생성에 실패했습니다. API 서버 상태를 확인해주세요.",
                             error=True
                         )
-                    
-                    # 대화 히스토리에 추가
-                    monitor.conversation_history.append({
-                        'question': question,
-                        'result': result,
-                        'timestamp': datetime.now()
-                    })
-                    
-                    # 진행 상황 초기화
-                    progress_bar.progress(0)
-                    status_text.text("")
-                    
-                    # 페이지 새로고침하여 모니터링 탭 업데이트
-                    st.rerun()
-                else:
+                        
+                except Exception as e:
                     render_chat_message(
                         message_type="assistant",
-                        content="답변 생성에 실패했습니다. API 서버 상태를 확인해주세요.",
+                        content=f"오류가 발생했습니다: {str(e)}",
                         error=True
                     )
-                    
-            except Exception as e:
-                render_chat_message(
-                    message_type="assistant",
-                    content=f"오류가 발생했습니다: {str(e)}",
-                    error=True
-                )
-                
-                # 진행 상황 초기화
-                progress_bar.progress(0)
-                status_text.text("")
         
         elif submit_button and not question.strip():
             st.warning("질문을 입력해주세요.")

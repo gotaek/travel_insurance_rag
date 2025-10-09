@@ -2,7 +2,7 @@ from typing import Dict, Any, List, Optional
 import json
 import re
 import logging
-from app.deps import get_llm
+from app.deps import get_planner_llm
 from graph.models import PlannerResponse
 from graph.config_manager import get_system_config
 
@@ -131,7 +131,7 @@ def _llm_classify_intent(question: str) -> Dict[str, Any]:
 
     try:
         logger.debug("LLM을 사용한 의도 분류 시작 (structured output)")
-        llm = get_llm()
+        llm = get_planner_llm()
         
         # structured output 사용
         structured_llm = llm.with_structured_output(PlannerResponse)
@@ -304,10 +304,89 @@ def _determine_web_search_need(question: str, intent: str) -> bool:
     
     # 날짜 패턴 (확장)
     date_patterns = [
+        # 연도 패턴
         r"\d{4}년", r"\d{4}-\d{2}", r"\d{4}/\d{2}", r"\d{4}\.\d{2}",
-        r"\d{1,2}월", r"내년", r"올해", r"다음 달", r"이번 달",
-        r"다음주", r"이번 주", r"내일", r"오늘", r"모레",
-        r"현재", r"지금", r"요즘", r"최근", r"최신"
+        r"\d{4}년\s*\d{1,2}월", r"\d{4}-\d{2}-\d{2}", r"\d{4}/\d{2}/\d{2}",
+        
+        # 월 패턴
+        r"\d{1,2}월", r"\d{1,2}월\s*\d{1,2}일", r"\d{1,2}월\s*\d{1,2}일",
+        r"1월", r"2월", r"3월", r"4월", r"5월", r"6월",
+        r"7월", r"8월", r"9월", r"10월", r"11월", r"12월",
+        r"일월", r"이월", r"삼월", r"사월", r"오월", r"유월",
+        r"칠월", r"팔월", r"구월", r"시월", r"십일월", r"십이월",
+        
+        # 계절 패턴
+        r"봄", r"여름", r"가을", r"겨울", r"봄철", r"여름철", r"가을철", r"겨울철",
+        r"봄여행", r"여름여행", r"가을여행", r"겨울여행",
+        r"봄휴가", r"여름휴가", r"가을휴가", r"겨울휴가",
+        
+        # 주 단위 패턴
+        r"다음주", r"이번 주", r"이번주", r"다음 주", r"이번주말", r"다음주말",
+        r"주말", r"주중", r"평일", r"휴일", r"공휴일",
+        r"일주일", r"2주일", r"3주일", r"한 주", r"두 주", r"세 주",
+        r"일주일 후", r"2주일 후", r"3주일 후", r"한 주 후", r"두 주 후",
+        r"일주일 이내", r"2주일 이내", r"3주일 이내", r"한 주 이내", r"두 주 이내",
+        
+        # 일 단위 패턴
+        r"내일", r"오늘", r"모레", r"글피", r"어제", r"그제",
+        r"오늘부터", r"내일부터", r"모레부터", r"오늘부터\s*\d+일",
+        r"내일부터\s*\d+일", r"모레부터\s*\d+일",
+        r"\d+일 후", r"\d+일 뒤", r"\d+일 뒤에", r"\d+일 후에",
+        r"며칠 후", r"며칠 뒤", r"며칠 뒤에", r"며칠 후에",
+        r"하루", r"이틀", r"사흘", r"나흘", r"닷새", r"엿새", r"이레",
+        r"하루 후", r"이틀 후", r"사흘 후", r"나흘 후", r"닷새 후",
+        
+        # 월 단위 패턴
+        r"다음 달", r"이번 달", r"이번달", r"다음달", r"다음 달", r"이번 달",
+        r"한 달", r"두 달", r"세 달", r"1개월", r"2개월", r"3개월",
+        r"한 달 후", r"두 달 후", r"세 달 후", r"1개월 후", r"2개월 후",
+        r"한 달 이내", r"두 달 이내", r"세 달 이내", r"1개월 이내", r"2개월 이내",
+        
+        # 연도 패턴
+        r"내년", r"올해", r"작년", r"내후년", r"재작년",
+        r"2024년", r"2025년", r"2026년", r"2027년", r"2028년",
+        r"내년 여름", r"내년 겨울", r"올해 여름", r"올해 겨울",
+        r"내년 봄", r"내년 가을", r"올해 봄", r"올해 가을",
+        
+        # 시간 관련 패턴
+        r"현재", r"지금", r"요즘", r"최근", r"최신", r"요새", r"요즈음",
+        r"최근에", r"요즘에", r"지금까지", r"현재까지", r"요즘까지",
+        r"최근 몇", r"요즘 몇", r"지금 몇", r"현재 몇",
+        r"최근 몇일", r"요즘 몇일", r"지금 몇일", r"현재 몇일",
+        r"최근 몇주", r"요즘 몇주", r"지금 몇주", r"현재 몇주",
+        r"최근 몇개월", r"요즘 몇개월", r"지금 몇개월", r"현재 몇개월",
+        
+        # 특별한 날짜 패턴
+        r"설날", r"추석", r"어린이날", r"어버이날", r"스승의날",
+        r"현충일", r"광복절", r"개천절", r"한글날", r"크리스마스",
+        r"신정", r"구정", r"부처님오신날", r"어린이날", r"어버이날",
+        r"설날 연휴", r"추석 연휴", r"어린이날 연휴", r"현충일 연휴",
+        r"광복절 연휴", r"개천절 연휴", r"한글날 연휴", r"크리스마스 연휴",
+        
+        # 휴가/여행 관련 패턴
+        r"휴가", r"여행", r"출장", r"관광", r"방문", r"체류",
+        r"휴가철", r"여행철", r"출장철", r"관광철", r"방문철",
+        r"휴가 기간", r"여행 기간", r"출장 기간", r"관광 기간", r"방문 기간",
+        r"휴가 때", r"여행 때", r"출장 때", r"관광 때", r"방문 때",
+        r"휴가 중", r"여행 중", r"출장 중", r"관광 중", r"방문 중",
+        
+        # 기간 표현 패턴
+        r"기간", r"동안", r"사이", r"중에", r"때", r"중",
+        r"부터", r"까지", r"~", r"-", r"에서", r"로",
+        r"이내", r"안에", r"내에", r"후", r"뒤", r"뒤에", r"후에",
+        r"전에", r"앞에", r"앞서", r"이전", r"이후", r"이후에",
+        
+        # 숫자 + 단위 패턴
+        r"\d+일", r"\d+주", r"\d+개월", r"\d+년",
+        r"\d+일간", r"\d+주간", r"\d+개월간", r"\d+년간",
+        r"\d+일 동안", r"\d+주 동안", r"\d+개월 동안", r"\d+년 동안",
+        r"\d+일째", r"\d+주째", r"\d+개월째", r"\d+년째",
+        
+        # 상대적 시간 표현
+        r"곧", r"가까운", r"가까운 시일", r"가까운 장래", r"가까운 미래",
+        r"조만간", r"얼마 안", r"얼마 안에", r"얼마 안 되어", r"얼마 안 돼서",
+        r"금방", r"바로", r"즉시", r"당장", r"지금 당장", r"지금 바로",
+        r"언제든", r"언제든지", r"언제나", r"항상", r"계속", r"지속적으로"
     ]
     has_date = any(re.search(pattern, question) for pattern in date_patterns)
     
@@ -359,7 +438,8 @@ def _determine_web_search_need(question: str, intent: str) -> bool:
         "저렴", "비싸", "경쟁", "시장", "현재 가격", "최신 가격",
         "가격 비교", "비용 비교", "요금 비교", "보험료 비교",
         "가장 저렴", "가장 비싼", "순서", "순위", "랭킹", "현재",
-        "실시간", "최신", "업데이트", "변동", "시세"
+        "실시간", "최신", "업데이트", "변동", "시세", "비교해주세요",
+        "비교해", "비교해줘", "비교해주시고", "비교해주세요"
     ]
     
     # 혜택/이벤트 관련 키워드 (웹 검색 필요 - 최신 정보)
@@ -412,6 +492,9 @@ def _determine_web_search_need(question: str, intent: str) -> bool:
         if has_city or has_date:
             web_score += 3
     
+    # 디버깅을 위한 로그 추가
+    logger.debug(f"웹 검색 점수 계산: {web_score}점 (날짜:{has_date}, 지역:{has_city}, 실시간:{has_live}, 안전:{has_safety}, 가격:{has_price}, 혜택:{has_benefit}, intent:{intent})")
+    
     # 웹 검색 필요성 임계값 (5점 이상이면 웹 검색 필요)
     return web_score >= 5
 
@@ -463,7 +546,7 @@ def _is_llm_result_better(fallback_result: Dict[str, Any], llm_result: Dict[str,
 
 def planner_node(state: Dict[str, Any]) -> Dict[str, Any]:
     """
-    LLM 기반 질문 분석 및 분기 결정 (성능 최적화: fallback 우선 사용)
+    LLM 기반 질문 분석 및 분기 결정 (정확도 향상: LLM 분류 우선 사용)
     보험사 엔티티 추출 및 필터링 로직 포함
     """
     q = state.get("question", "")
@@ -484,36 +567,14 @@ def planner_node(state: Dict[str, Any]) -> Dict[str, Any]:
     logger.info(f"비보유 보험사: {insurer_info['non_owned_insurers']}")
     logger.info(f"보험사 기반 needs_web: {insurer_info['needs_web']}")
     
-    # 시스템 설정에 따른 분류 전략 결정
-    config = get_system_config()
-    
-    # 성능 최적화: fallback 분류 우선 사용
-    if config.is_fallback_priority():
-        logger.debug("빠른 fallback 분류 사용")
+    # LLM 분류 우선 사용 (정확도 향상을 위해)
+    logger.debug("LLM 분류 우선 사용")
+    try:
+        classification = _llm_classify_intent(q)
+        logger.debug("LLM 분류 성공")
+    except Exception as e:
+        logger.warning(f"LLM 분류 실패, fallback 사용: {str(e)}")
         classification = _fallback_classify(q)
-        
-        # 복잡한 케이스에만 LLM 사용 (선택적)
-        if config.is_llm_classification_enabled() and _needs_llm_classification(q):
-            logger.debug("복잡한 케이스로 LLM 분류 사용")
-            try:
-                llm_classification = _llm_classify_intent(q)
-                # LLM 결과가 더 정확하면 사용
-                if _is_llm_result_better(classification, llm_classification):
-                    classification = llm_classification
-                    logger.debug("LLM 분류 결과 사용")
-            except Exception as e:
-                logger.warning(f"LLM 분류 실패, fallback 결과 유지: {str(e)}")
-    else:
-        # LLM 분류 우선 사용
-        if config.is_llm_classification_enabled():
-            logger.debug("LLM 분류 우선 사용")
-            try:
-                classification = _llm_classify_intent(q)
-            except Exception as e:
-                logger.warning(f"LLM 분류 실패, fallback 사용: {str(e)}")
-                classification = _fallback_classify(q)
-        else:
-            classification = _fallback_classify(q)
     
     intent = classification["intent"]
     
@@ -522,17 +583,16 @@ def planner_node(state: Dict[str, Any]) -> Dict[str, Any]:
         needs_web = True
         logger.info(f"🔄 2번째 사이클 이상 - 무조건 웹 검색 활성화 (재검색 횟수: {replan_count})")
     else:
-        # 보험사 정보를 기반으로 needs_web 최종 결정
-        # 보험사가 언급된 경우: 보험사 기반 needs_web 우선 적용
-        # 보험사가 언급되지 않은 경우: 기존 needs_web 로직 적용
-        if insurer_info["extracted_insurers"]:
-            # 보험사가 언급된 경우: 보험사 기반 needs_web만 사용
-            needs_web = insurer_info["needs_web"]
-            logger.info(f"보험사 언급됨: {insurer_info['extracted_insurers']}, 보험사 기반 needs_web: {needs_web}")
-        else:
-            # 보험사가 언급되지 않은 경우: 기존 needs_web 로직 사용
-            needs_web = classification["needs_web"]
-            logger.info(f"보험사 언급되지 않음, 기존 needs_web: {needs_web}")
+        # 보험사 정보와 키워드 기반 needs_web을 OR 조건으로 결합
+        # 둘 중 하나라도 True면 웹 검색 필요
+        insurer_based_web = insurer_info["needs_web"]
+        keyword_based_web = classification["needs_web"]
+        needs_web = insurer_based_web or keyword_based_web
+        
+        logger.info(f"웹 검색 필요성 결정:")
+        logger.info(f"  보험사 기반: {insurer_based_web} (추출된 보험사: {insurer_info['extracted_insurers']})")
+        logger.info(f"  키워드 기반: {keyword_based_web} (intent: {intent})")
+        logger.info(f"  최종 결정: {needs_web} (OR 조건)")
     
     reasoning = classification.get("reasoning", "")
     
@@ -554,5 +614,5 @@ def planner_node(state: Dict[str, Any]) -> Dict[str, Any]:
         "non_owned_insurers": insurer_info["non_owned_insurers"],
         # replan_count는 명시적으로 유지 (초기화하지 않음)
         "replan_count": replan_count,
-        "max_replan_attempts": state.get("max_replan_attempts", config.get_max_replan_attempts())
+        "max_replan_attempts": state.get("max_replan_attempts", 3)  # 기본값 3으로 설정
     }

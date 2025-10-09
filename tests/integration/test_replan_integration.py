@@ -150,7 +150,7 @@ class TestReplanIntegration:
         suggested_query = "여행자보험 보상금액 상세 정보"
         
         # LLM 호출을 강제로 실패시키기
-        with patch('graph.nodes.replan.get_llm') as mock_get_llm:
+        with patch('graph.nodes.replan.get_planner_llm') as mock_get_llm:
             mock_get_llm.side_effect = Exception("LLM 호출 실패")
             
             result = _generate_replan_query(original_question, feedback, suggested_query)

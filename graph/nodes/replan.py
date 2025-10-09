@@ -1,7 +1,7 @@
 from typing import Dict, Any
 import json
 import logging
-from app.deps import get_llm
+from app.deps import get_planner_llm
 from graph.models import ReplanResponse
 from graph.config_manager import get_system_config
 
@@ -106,7 +106,7 @@ def _generate_replan_query(original_question: str, feedback: str, suggested_quer
 
     try:
         logger.debug("LLM을 사용한 재검색 질문 생성 시작 (structured output)")
-        llm = get_llm()
+        llm = get_planner_llm()
         
         # structured output 사용
         structured_llm = llm.with_structured_output(ReplanResponse)
