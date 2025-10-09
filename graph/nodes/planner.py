@@ -127,6 +127,7 @@ def _llm_classify_intent(question: str) -> Dict[str, Any]:
 - 특정 날짜나 지역의 현재 상황이 필요한가?
 - 여행지의 현재 안전 상황이나 규제가 필요한가?
 - 가격 비교가 필요한가?
+- 리워드 정보가 필요한가?
 """
 
     try:
