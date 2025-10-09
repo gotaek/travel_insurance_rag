@@ -20,13 +20,54 @@ ingest:
 	docker compose exec -T api bash scripts/rebuild_vector.sh
 
 eval:
-	docker compose exec -T api python eval/ragas_pipeline.py
+	docker compose exec -T api python eval/simple_eval.py
 
 eval.analysis:
 	docker compose exec -T api python eval/analysis_report.py
 
 eval.simple:
-	docker compose exec -T api python eval/simple_test.py
+	docker compose exec -T api python eval/simple_eval.py
+
+eval.basic:
+	@echo "🚀 기본 평가 시스템 실행..."
+	docker compose exec -T api python eval/simple_eval.py
+
+eval.basic.local:
+	@echo "🚀 로컬에서 기본 평가 실행..."
+	python eval/simple_eval.py
+
+eval.basic.debug:
+	@echo "🔍 기본 평가 디버그 모드 실행..."
+	docker compose exec -T api python -u eval/simple_eval.py
+
+eval.basic.clean:
+	@echo "🧹 기본 평가 결과 정리..."
+	docker compose exec -T api rm -rf eval/out/simple_eval_*
+
+eval.basic.help:
+	@echo "📋 기본 평가 시스템 명령어 도움말"
+	@echo ""
+	@echo "🚀 실행 명령어:"
+	@echo "  make eval              - 기본 평가 실행 (simple_eval.py)"
+	@echo "  make eval.basic        - 기본 평가 시스템 실행"
+	@echo "  make eval.basic.local  - 로컬에서 기본 평가 실행"
+	@echo "  make eval.simple       - 기본 평가 실행 (별칭)"
+	@echo ""
+	@echo "🔍 디버그 명령어:"
+	@echo "  make eval.basic.debug  - 디버그 모드로 평가 실행"
+	@echo "  make eval.basic.clean  - 평가 결과 파일 정리"
+	@echo ""
+	@echo "📊 결과 확인:"
+	@echo "  eval/out/simple_eval_results.csv   - 상세 평가 결과 (CSV)"
+	@echo "  eval/out/simple_eval_results.json  - 상세 평가 결과 (JSON)"
+	@echo "  eval/out/simple_eval_summary.json  - 요약 통계"
+	@echo ""
+	@echo "📈 평가 메트릭:"
+	@echo "  - 응답시간: RAG 시스템 응답 속도"
+	@echo "  - 답변길이: 생성된 답변의 길이"
+	@echo "  - 컨텍스트수: 검색된 문서 개수"
+	@echo "  - 키워드매칭: 정답 키워드와의 일치도"
+	@echo "  - 품질점수: 종합적인 답변 품질 점수"
 
 ui:
 	docker compose exec api streamlit run ui/app.py --server.port 8501 --server.address 0.0.0.0

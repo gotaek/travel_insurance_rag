@@ -21,6 +21,7 @@ PyYAML
 # AI/ML Models
 google-generativeai
 google-genai>=0.2.0
+langchain-google-genai
 FlagEmbedding
 torch
 
