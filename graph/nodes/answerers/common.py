@@ -35,13 +35,14 @@ def format_context_optimized(passages: List[Dict]) -> str:
     if not passages:
         return "관련 문서를 찾을 수 없습니다."
     
-    # 상위 5개만 처리, 텍스트 길이 제한
+    # 상위 5개만 처리, 텍스트 길이 제한 완화
     context_parts = []
     for i, passage in enumerate(passages[:5], 1):
+        insurer = passage.get("insurer", "알 수 없음")
         doc_id = passage.get("doc_id", "알 수 없음")
         page = passage.get("page", "알 수 없음")
-        text = passage.get("text", "")[:500]  # 500자로 제한
-        context_parts.append(f"[문서 {i}] {doc_id} (페이지 {page})\n{text}\n")
+        text = passage.get("text", "")[:1000]  # 1000자로 확장
+        context_parts.append(f"[문서 {i}] {insurer} - {doc_id} (페이지 {page})\n{text}\n")
     
     return "\n".join(context_parts)
 

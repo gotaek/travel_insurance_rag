@@ -398,6 +398,11 @@ def verify_refine_node(state: Dict[str, Any]) -> Dict[str, Any]:
     warnings.extend(conflict_warnings)
     logger.info(f"🔍 [VerifyRefine] 상충 탐지 완료 - 경고: {len(conflict_warnings)}개")
     
+    # 문서를 5개로 제한 (상위 점수 기준)
+    unique_refined.sort(key=lambda x: x.get("score", 0.0), reverse=True)
+    unique_refined = unique_refined[:5]
+    logger.info(f"🔍 [VerifyRefine] 문서 5개로 제한 완료")
+    
     # 표준화된 인용 생성 (보험사 우선순위 적용)
     citations = _build_standardized_citations(unique_refined, insurer_filter)
     logger.info(f"🔍 [VerifyRefine] 인용 생성 완료 - {len(citations)}개")

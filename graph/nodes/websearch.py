@@ -252,7 +252,7 @@ def _get_optimized_search_params(state: Dict[str, Any]) -> Dict[str, Any]:
     질문 유형과 의도에 따라 최적화된 검색 매개변수를 설정합니다.
     Tavily API의 시간 관련 매개변수를 활용합니다.
     """
-    question = state.get("question", "").lower()
+    question = state.get("question", "").lower() 
     intent = state.get("intent", "qa")
 
     params: Dict[str, Any] = {}

@@ -1,10 +1,7 @@
 from typing import Dict, Any, List, Optional
-import os
-import re
-from collections import Counter
 
 from retriever.vector import vector_search
-from retriever.keyword import keyword_search, keyword_search_full_corpus
+from retriever.keyword import keyword_search_full_corpus
 from retriever.hybrid import hybrid_search
 from retriever.korean_tokenizer import (
     extract_insurance_keywords, 
@@ -259,102 +256,7 @@ def _determine_k_value(query: str, web_results: List[Dict[str, Any]]) -> int:
     # 최대 15개로 제한
     return min(base_k, 15)
 
-def _enhanced_hybrid_search(
-    query: str,
-    vector_results: List[Dict[str, Any]],
-    keyword_results: List[Dict[str, Any]],
-    web_results: List[Dict[str, Any]],
-    k: int = 5
-) -> List[Dict[str, Any]]:
-    """
-    웹 검색 결과를 고려한 향상된 하이브리드 검색을 수행합니다.
-    
-    Args:
-        query: 검색 쿼리
-        vector_results: 벡터 검색 결과
-        keyword_results: 키워드 검색 결과
-        web_results: 웹 검색 결과
-        k: 반환할 결과 수
-        
-    Returns:
-        통합된 검색 결과
-    """
-    # 기본 하이브리드 검색 수행
-    merged = hybrid_search(query, vector_results, keyword_results, k=k)
-    
-    # 웹 결과가 있으면 로컬 문서 결과에 웹 컨텍스트 정보 추가
-    if web_results:
-        merged = _add_web_context_to_results(merged, web_results)
-    
-    return merged
-
-def _add_web_context_to_results(
-    local_results: List[Dict[str, Any]], 
-    web_results: List[Dict[str, Any]]
-) -> List[Dict[str, Any]]:
-    """
-    로컬 검색 결과에 웹 컨텍스트 정보를 추가합니다.
-    
-    Args:
-        local_results: 로컬 검색 결과
-        web_results: 웹 검색 결과
-        
-    Returns:
-        웹 컨텍스트가 추가된 검색 결과
-    """
-    if not web_results:
-        return local_results
-    
-    # 웹 결과에서 상위 3개만 선택
-    top_web_results = web_results[:3]
-    
-    # 각 로컬 결과에 웹 컨텍스트 정보 추가
-    enhanced_results = []
-    for result in local_results:
-        enhanced_result = dict(result)
-        
-        # 웹 컨텍스트 정보 추가
-        enhanced_result["web_context"] = {
-            "has_web_info": True,
-            "web_sources_count": len(top_web_results),
-            "web_relevance_score": _calculate_web_relevance(result, top_web_results)
-        }
-        
-        enhanced_results.append(enhanced_result)
-    
-    return enhanced_results
-
-def _calculate_web_relevance(
-    local_result: Dict[str, Any], 
-    web_results: List[Dict[str, Any]]
-) -> float:
-    """
-    로컬 검색 결과와 웹 검색 결과 간의 관련성을 계산합니다.
-    
-    Args:
-        local_result: 로컬 검색 결과
-        web_results: 웹 검색 결과
-        
-    Returns:
-        관련성 점수 (0.0 ~ 1.0)
-    """
-    if not web_results:
-        return 0.0
-    
-    local_text = local_result.get("text", "")
-    relevance_scores = []
-    
-    for web_result in web_results:
-        web_title = web_result.get("title", "")
-        web_snippet = web_result.get("snippet", "")
-        web_text = f"{web_title} {web_snippet}"
-        
-        # 개선된 키워드 관련성 계산
-        relevance_score = calculate_keyword_relevance(local_text, [web_text])
-        relevance_scores.append(relevance_score)
-    
-    # 평균 관련성 점수 반환
-    return sum(relevance_scores) / len(relevance_scores) if relevance_scores else 0.0
+ 
 
 def _convert_web_results_to_passages(web_results: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """

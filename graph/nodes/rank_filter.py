@@ -53,19 +53,14 @@ def _rerank_with_advanced_scoring(passages: List[Dict[str, Any]], question: str,
         # 키워드 매칭 점수 (제목 매칭에 더 높은 가중치)
         keyword_score = (text_matches * 0.3 + title_matches * 0.7) / max(len(question_words), 1)
         
-        # 문서 품질 점수 (길이, 구조 등)
-        quality_score = min(len(text) / 500, 1.0)  # 적절한 길이의 문서 선호
+        # 문서 품질 점수 (길이, 구조 등) - 길이 가중치 추가 완화
+        quality_score = min(len(text) / 500, 1.0)
         
-        # 보험 관련 키워드 가중치
-        insurance_keywords = ["보험", "보장", "보상", "손해", "위험", "보험료", "보험금", "보험사"]
-        insurance_bonus = sum(1 for kw in insurance_keywords if kw in text) * 0.1
-        
-        # 최종 점수 계산 (보험사 가중치 제거)
+        # 최종 점수 계산 (보험 키워드 보너스 제거, 길이 가중치 더 낮춤)
         final_score = (
-            base_score * 0.5 +           # 기본 검색 점수
-            keyword_score * 0.25 +       # 키워드 매칭
-            quality_score * 0.1 +        # 문서 품질
-            insurance_bonus              # 보험 전문성 보너스
+            base_score * 0.7 +           # 기본 검색 점수 비중 강화
+            keyword_score * 0.2 +        # 키워드 매칭 비중 완화
+            quality_score * 0.02         # 문서 품질(길이) 비중 추가 완화
         )
         
         # 점수 업데이트
@@ -74,16 +69,15 @@ def _rerank_with_advanced_scoring(passages: List[Dict[str, Any]], question: str,
         passage_copy["rerank_score"] = final_score
         passage_copy["keyword_matches"] = text_matches + title_matches
         passage_copy["score_breakdown"] = {
-            "base_score": base_score * 0.5,
-            "keyword_score": keyword_score * 0.25,
-            "quality_score": quality_score * 0.1,
-            "insurance_bonus": insurance_bonus
+            "base_score": base_score * 0.6,
+            "keyword_score": keyword_score * 0.2,
+            "quality_score": quality_score * 0.02
         }
         reranked.append(passage_copy)
     
     return reranked
 
-def _apply_mmr(passages: List[Dict[str, Any]], question: str, lambda_param: float = 0.7, insurer_filter: List[str] = None) -> List[Dict[str, Any]]:
+def _apply_mmr(passages: List[Dict[str, Any]], question: str, lambda_param: float = 0.85, insurer_filter: List[str] = None) -> List[Dict[str, Any]]:
     """
     MMR (Maximal Marginal Relevance) 적용
     - 관련성과 다양성의 균형
@@ -105,8 +99,8 @@ def _apply_mmr(passages: List[Dict[str, Any]], question: str, lambda_param: floa
         selected.append(remaining.pop(0))
     
     
-    # MMR 알고리즘 적용
-    while remaining and len(selected) < 5:  # 최대 5개 선택
+    # MMR 알고리즘 적용 (기준 완화: 선택 개수 확대)
+    while remaining and len(selected) < 8:  # 최대 8개 선택
         best_idx = 0
         best_mmr_score = -1
         
@@ -160,13 +154,13 @@ def _quality_filter(passages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     
     filtered = []
     for passage in passages:
-        # 최소 점수 임계값
-        if passage.get("score", 0.0) < 0.1:
+        # 최소 점수 임계값 (완화)
+        if passage.get("score", 0.0) < 0.05:
             continue
         
-        # 텍스트 길이 검증 (너무 짧거나 긴 문서 제외)
+        # 텍스트 길이 검증 (완화: 범위 확대)
         text_length = len(passage.get("text", ""))
-        if text_length < 50 or text_length > 2000:
+        if text_length < 30 or text_length > 4000:
             continue
         
         filtered.append(passage)
@@ -201,15 +195,15 @@ def rank_filter_node(state: Dict[str, Any]) -> Dict[str, Any]:
     logger.info(f"전통적 리랭크 사용: {len(deduped)}개 후보, 보험사 필터: {insurer_filter}")
     reranked = _rerank_with_advanced_scoring(deduped, question, insurer_filter)
     
-    # 3. MMR 적용 (다양성 확보, 보험사 우선순위 샘플링 포함)
-    diverse = _apply_mmr(reranked, question, lambda_param=0.7, insurer_filter=insurer_filter)
+    # 3. MMR 적용 (다양성 페널티 완화, 선택 개수 확대)
+    diverse = _apply_mmr(reranked, question, lambda_param=0.85, insurer_filter=insurer_filter)
     
     # 4. 품질 필터링
     filtered = _quality_filter(diverse)
     
-    # 5. 최종 정렬 및 Top-k 선택
+    # 5. 최종 정렬 및 Top-k 선택 (확대)
     sorted_passages = _sort_by_score(filtered)
-    topk = sorted_passages[:5]
+    topk = sorted_passages[:8]
     
     
     # 메타데이터 추가

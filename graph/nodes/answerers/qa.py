@@ -63,7 +63,7 @@ def _parse_llm_response_structured(llm, prompt: str, emergency_fallback: bool = 
             }
         else:
             # structured output 실패 시 fallback 파싱 시도
-            return _parse_llm_response_fallback(llm, prompt)
+            return _parse_llm_response_fallback(llm, prompt, "질문")
 
 def _format_web_results(web_results: list) -> str:
     """웹 검색 결과를 포맷팅"""
@@ -96,9 +96,15 @@ def qa_node(state: Dict[str, Any]) -> Dict[str, Any]:
     context = format_context_optimized(refined)
     web_info = _format_web_results(web_results)
     
+    # 디버깅 로그 추가
+    logger.info(f"🔍 [QA] 컨텍스트 길이: {len(context)}자, 웹 정보 길이: {len(web_info)}자")
+    logger.info(f"🔍 [QA] refined 문서 수: {len(refined)}")
+    
     # 캐시된 프롬프트 로드 (모듈 레벨 캐시 사용)
     system_prompt = get_system_prompt()
     qa_prompt = get_prompt_cached("qa")
+    
+    logger.info(f"🔍 [QA] 시스템 프롬프트 길이: {len(system_prompt)}자, QA 프롬프트 길이: {len(qa_prompt)}자")
     
     # 웹 정보를 포함한 프롬프트 생성
     full_prompt = f"""{system_prompt}
@@ -119,13 +125,17 @@ def qa_node(state: Dict[str, Any]) -> Dict[str, Any]:
     try:
         # Answerer 전용 LLM 사용 (Gemini 2.5 Flash)
         llm = get_answerer_llm()
+        logger.info(f"🔍 [QA] LLM 초기화 완료, 프롬프트 총 길이: {len(full_prompt)}자")
         
         # 간소화된 structured output 사용
         try:
+            logger.info("🔍 [QA] Structured output 시도 중...")
             answer = _parse_llm_response_structured(llm, full_prompt, emergency_fallback=False)
+            logger.info(f"🔍 [QA] Structured output 성공 - 답변 길이: {len(answer.get('conclusion', ''))}자")
         except Exception as e:
-            logger.warning(f"Structured output 실패, fallback 사용: {e}")
+            logger.warning(f"🔍 [QA] Structured output 실패, fallback 사용: {e}")
             answer = get_simple_fallback_response(question, "QA")
+            logger.info(f"🔍 [QA] Fallback 답변 생성 완료 - 답변 길이: {len(answer.get('conclusion', ''))}자")
         
         # verify_refine 데이터 처리 (최적화된 함수 사용)
         answer = process_verify_refine_data(state, answer)
