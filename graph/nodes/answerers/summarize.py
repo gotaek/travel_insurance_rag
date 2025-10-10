@@ -5,6 +5,7 @@ import time
 from app.deps import get_answerer_llm
 from graph.models import AnswerResponse, EvidenceInfo, CaveatInfo
 from graph.prompts.utils import get_simple_fallback_response
+from graph.cache_manager import cache_manager
 from .common import (
     get_system_prompt, get_prompt_cached, format_context_optimized,
     process_verify_refine_data, create_optimized_prompt, 
@@ -137,15 +138,26 @@ def summarize_node(state: Dict[str, Any]) -> Dict[str, Any]:
 위 정보를 참고하여 요약해주세요."""
     
     try:
-        # Answerer 전용 LLM 사용 (Gemini 2.5 Flash)
-        llm = get_answerer_llm()
-        
-        # 간소화된 structured output 사용
-        try:
-            answer = _parse_llm_response_structured(llm, full_prompt, emergency_fallback=False)
-        except Exception as e:
-            logger.warning(f"Structured output 실패, fallback 사용: {e}")
-            answer = get_simple_fallback_response(question, "Summarize")
+        # LLM 응답 캐시 확인
+        prompt_hash = cache_manager.generate_prompt_hash(full_prompt)
+        cached_response = cache_manager.get_cached_llm_response(prompt_hash)
+        if cached_response:
+            logger.info("🔍 [Summarize] LLM 응답 캐시 히트!")
+            answer = cached_response
+        else:
+            # Answerer 전용 LLM 사용 (Gemini 2.5 Flash)
+            llm = get_answerer_llm()
+            
+            # 간소화된 structured output 사용
+            try:
+                answer = _parse_llm_response_structured(llm, full_prompt, emergency_fallback=False)
+                
+                # LLM 응답 캐싱
+                cache_manager.cache_llm_response(prompt_hash, answer)
+                logger.info("🔍 [Summarize] LLM 응답 캐시 저장 완료")
+            except Exception as e:
+                logger.warning(f"Structured output 실패, fallback 사용: {e}")
+                answer = get_simple_fallback_response(question, "Summarize")
         
         # verify_refine 데이터 처리 (최적화된 함수 사용)
         answer = process_verify_refine_data(state, answer)

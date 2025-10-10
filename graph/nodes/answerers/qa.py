@@ -5,6 +5,7 @@ import time
 from app.deps import get_answerer_llm
 from graph.models import AnswerResponse, EvidenceInfo, CaveatInfo
 from graph.prompts.utils import get_simple_fallback_response
+from graph.cache_manager import cache_manager
 from .common import (
     get_system_prompt, get_prompt_cached, format_context_optimized,
     process_verify_refine_data, create_optimized_prompt, 
@@ -123,19 +124,30 @@ def qa_node(state: Dict[str, Any]) -> Dict[str, Any]:
 위 정보를 참고하여 답변해주세요."""
     
     try:
-        # Answerer 전용 LLM 사용 (Gemini 2.5 Flash)
-        llm = get_answerer_llm()
-        logger.info(f"🔍 [QA] LLM 초기화 완료, 프롬프트 총 길이: {len(full_prompt)}자")
-        
-        # 간소화된 structured output 사용
-        try:
-            logger.info("🔍 [QA] Structured output 시도 중...")
-            answer = _parse_llm_response_structured(llm, full_prompt, emergency_fallback=False)
-            logger.info(f"🔍 [QA] Structured output 성공 - 답변 길이: {len(answer.get('conclusion', ''))}자")
-        except Exception as e:
-            logger.warning(f"🔍 [QA] Structured output 실패, fallback 사용: {e}")
-            answer = get_simple_fallback_response(question, "QA")
-            logger.info(f"🔍 [QA] Fallback 답변 생성 완료 - 답변 길이: {len(answer.get('conclusion', ''))}자")
+        # LLM 응답 캐시 확인
+        prompt_hash = cache_manager.generate_prompt_hash(full_prompt)
+        cached_response = cache_manager.get_cached_llm_response(prompt_hash)
+        if cached_response:
+            logger.info("🔍 [QA] LLM 응답 캐시 히트!")
+            answer = cached_response
+        else:
+            # Answerer 전용 LLM 사용 (Gemini 2.5 Flash)
+            llm = get_answerer_llm()
+            logger.info(f"🔍 [QA] LLM 초기화 완료, 프롬프트 총 길이: {len(full_prompt)}자")
+            
+            # 간소화된 structured output 사용
+            try:
+                logger.info("🔍 [QA] Structured output 시도 중...")
+                answer = _parse_llm_response_structured(llm, full_prompt, emergency_fallback=False)
+                logger.info(f"🔍 [QA] Structured output 성공 - 답변 길이: {len(answer.get('conclusion', ''))}자")
+                
+                # LLM 응답 캐싱
+                cache_manager.cache_llm_response(prompt_hash, answer)
+                logger.info("🔍 [QA] LLM 응답 캐시 저장 완료")
+            except Exception as e:
+                logger.warning(f"🔍 [QA] Structured output 실패, fallback 사용: {e}")
+                answer = get_simple_fallback_response(question, "QA")
+                logger.info(f"🔍 [QA] Fallback 답변 생성 완료 - 답변 길이: {len(answer.get('conclusion', ''))}자")
         
         # verify_refine 데이터 처리 (최적화된 함수 사용)
         answer = process_verify_refine_data(state, answer)

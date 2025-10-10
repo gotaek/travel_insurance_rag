@@ -6,6 +6,7 @@ import json
 from datetime import datetime
 from tavily import TavilyClient
 from app.deps import get_settings, get_redis_client
+from graph.cache_manager import cache_manager
 
 # 로깅 설정
 logger = logging.getLogger(__name__)
@@ -419,29 +420,27 @@ def _deduplicate_and_rank(results: List[Dict[str, Any]]) -> List[Dict[str, Any]]
 # ---------------------------------------------------------------------------
 
 def _check_cache(state: Dict[str, Any]) -> Optional[List[Dict[str, Any]]]:
-    """Redis에서 캐시된 검색 결과를 확인"""
+    """캐시된 웹 검색 결과를 확인"""
     try:
-        redis_client = get_redis_client()
-        if not redis_client:
-            return None
-        cache_key = _generate_cache_key(state)
-        cached_data = redis_client.get(cache_key)
-        if cached_data:
-            return json.loads(cached_data)
+        question = state.get("question", "")
+        intent = state.get("intent", "qa")
+        # cache_manager를 통한 통합 캐시 확인
+        cached_results = cache_manager.get_cached_search_results(question, "websearch", 5)
+        if cached_results:
+            logger.info(f"웹 검색 캐시 히트: {question[:50]}...")
+            return cached_results
     except Exception as e:
         logger.warning(f"캐시 확인 중 오류: {str(e)}")
     return None
 
 
 def _save_to_cache(state: Dict[str, Any], results: List[Dict[str, Any]]) -> None:
-    """검색 결과를 Redis에 캐시 (10분 TTL)"""
+    """검색 결과를 캐시에 저장"""
     try:
-        redis_client = get_redis_client()
-        if not redis_client:
-            return
-        cache_key = _generate_cache_key(state)
-        redis_client.setex(cache_key, 600, json.dumps(results, ensure_ascii=False))
-        logger.debug(f"검색 결과 캐시 저장: {cache_key}")
+        question = state.get("question", "")
+        # cache_manager를 통한 통합 캐시 저장
+        cache_manager.cache_search_results(question, results, "websearch", 5)
+        logger.debug(f"웹 검색 결과 캐시 저장: {question[:50]}...")
     except Exception as e:
         logger.warning(f"캐시 저장 중 오류: {str(e)}")
 

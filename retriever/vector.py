@@ -62,7 +62,7 @@ class VectorStore:
         
         # 캐시 키 생성 (where 절 포함)
         cache_key = f"{query}:{k}:{str(where)}" if where else f"{query}:{k}"
-        cached_results = cache_manager.get_cached_search_results(cache_key, "vector", k)
+        cached_results = cache_manager.get_cached_search_results(query, "vector", k)
         if cached_results is not None:
             logger.debug(f"벡터 검색 캐시 히트: {query[:50]}...")
             return cached_results
@@ -97,7 +97,7 @@ class VectorStore:
                     out.append(item)
             
             # 결과 캐싱
-            cache_manager.cache_search_results(cache_key, out, "vector", k)
+            cache_manager.cache_search_results(query, out, "vector", k)
             logger.debug(f"벡터 검색 완료 및 캐싱: {len(out)}개 결과")
             
             return out
