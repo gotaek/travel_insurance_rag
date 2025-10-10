@@ -6,7 +6,7 @@ class RAGState(TypedDict, total=False):
     question: Annotated[str, "현재 사용자 질문"]
     intent: Annotated[str, "질문 의도 (qa/summarize/compare/recommend)"]
     needs_web: Annotated[bool, "웹 검색 필요 여부"]
-    plan: Annotated[List[str], "실행 계획"]
+    is_domain_related: Annotated[bool, "여행자 보험 도메인 관련 질문 여부"]
     
     # 검색 및 문서 정보
     passages: Annotated[List[Dict[str, Any]], "검색된 문서 패시지"]

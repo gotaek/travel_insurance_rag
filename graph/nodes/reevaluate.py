@@ -27,10 +27,24 @@ def reevaluate_node(state: Dict[str, Any]) -> Dict[str, Any]:
     max_attempts = state.get("max_replan_attempts", config.get_max_replan_attempts())
     quality_threshold = config.get_quality_threshold()
     max_structured_failures = config.get_max_structured_failures()
+    is_domain_related = state.get("is_domain_related", True)  # 도메인 관련성 확인
     
     logger.info(f"🔍 [Reevaluate] 시작 - 재검색 횟수: {replan_count}/{max_attempts}")
     logger.info(f"🔍 [Reevaluate] 질문: '{question[:100]}...'")
     logger.info(f"🔍 [Reevaluate] 답변 타입: {type(answer)}, 인용 수: {len(citations)}, 패시지 수: {len(passages)}")
+    logger.info(f"🔍 [Reevaluate] 도메인 관련성: {is_domain_related}")
+    
+    # 비도메인 질문인 경우 품질 평가를 건너뛰고 바로 통과
+    if not is_domain_related:
+        logger.info(f"🔍 [Reevaluate] 비도메인 질문 - 품질 평가 건너뛰고 바로 통과")
+        return {
+            **state,
+            "quality_score": 1.0,  # 최고 점수로 설정
+            "quality_feedback": "비도메인 질문으로 품질 평가를 건너뛰었습니다.",
+            "needs_replan": False,  # 재검색 불필요
+            "replan_query": "",
+            "final_answer": answer  # 현재 답변을 최종 답변으로 설정
+        }
     
     # 답변 텍스트 추출 - 다양한 답변 구조 지원
     if isinstance(answer, dict):

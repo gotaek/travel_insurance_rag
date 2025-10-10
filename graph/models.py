@@ -33,6 +33,7 @@ class CaveatInfo(BaseModel):
 
 class PlannerResponse(BaseModel):
     """Planner 노드 응답 모델"""
+    is_domain_related: bool = Field(description="여행자 보험 도메인 관련 질문 여부", default=True)
     intent: str = Field(description="질문 의도 (qa/summarize/compare/recommend)", default="qa")
     needs_web: bool = Field(description="웹 검색 필요 여부", default=False)
     reasoning: str = Field(description="분류 근거", default="기본 분류")

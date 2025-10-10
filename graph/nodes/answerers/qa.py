@@ -79,19 +79,86 @@ def _format_web_results(web_results: list) -> str:
     
     return "\n".join(web_parts)
 
+def _generate_simple_llm_response(question: str, start_time: float) -> Dict[str, Any]:
+    """
+    비도메인 질문에 대한 간단한 LLM 응답을 생성합니다.
+    근거나 주의사항 없이 일반적인 답변만 제공합니다.
+    """
+    try:
+        # 간단한 프롬프트 생성
+        simple_prompt = f"""다음 질문에 대해 도움이 되는 답변을 제공해주세요.
+
+질문: {question}
+
+답변은 친절하고 정확하게 작성해주세요. 모르는 내용에 대해서는 솔직하게 말씀해주세요."""
+
+        # Answerer 전용 LLM 사용
+        llm = get_answerer_llm()
+        logger.info(f"🔍 [QA] 간단한 LLM 응답 생성 - 프롬프트 길이: {len(simple_prompt)}자")
+        
+        # 일반 LLM 응답 생성 (structured output 사용하지 않음)
+        response = llm.generate_content(simple_prompt)
+        response_text = response.text if response.text else "죄송합니다. 답변을 생성할 수 없습니다."
+        
+        # 간단한 답변 구조 생성 (근거, 주의사항 없음)
+        simple_answer = {
+            "conclusion": response_text,
+            "evidence": [],  # 근거 없음
+            "caveats": [],   # 주의사항 없음
+            "web_quotes": [],
+            "web_info": {}
+        }
+        
+        # 성능 로깅
+        log_performance("간단한 QA 완료", start_time, 
+                       conclusion_length=len(response_text))
+        
+        logger.info(f"🔍 [QA] 간단한 LLM 응답 생성 완료 - 답변 길이: {len(response_text)}자")
+        
+        return {
+            "draft_answer": simple_answer,
+            "final_answer": simple_answer
+        }
+        
+    except Exception as e:
+        logger.error(f"간단한 LLM 응답 생성 실패: {str(e)}")
+        # 오류 시 기본 fallback 응답
+        fallback_answer = {
+            "conclusion": "죄송합니다. 현재 답변을 생성할 수 없습니다. 잠시 후 다시 시도해주세요.",
+            "evidence": [],
+            "caveats": [],
+            "web_quotes": [],
+            "web_info": {}
+        }
+        
+        return {
+            "draft_answer": fallback_answer,
+            "final_answer": fallback_answer
+        }
+
 def qa_node(state: Dict[str, Any]) -> Dict[str, Any]:
     """
     QA 에이전트: 질문에 대한 직접적인 답변 생성 (최적화된 버전)
+    비도메인 질문의 경우 간단한 LLM 응답 제공
     """
     start_time = time.time()
     question = state.get("question", "")
     refined = state.get("refined", [])
     web_results = state.get("web_results", [])
+    is_domain_related = state.get("is_domain_related", True)  # 기본값은 True (기존 동작 유지)
     
     # 성능 로깅
     log_performance("QA 시작", start_time, 
                    question_length=len(question), refined_count=len(refined),
                    web_results_count=len(web_results))
+    
+    # 비도메인 질문인 경우 간단한 LLM 응답 생성
+    if not is_domain_related:
+        logger.info(f"🔍 [QA] 비도메인 질문 - 간단한 LLM 응답 생성: '{question}'")
+        return _generate_simple_llm_response(question, start_time)
+    
+    # 도메인 관련 질문인 경우 기존 RAG 파이프라인 실행
+    logger.info(f"🔍 [QA] 도메인 관련 질문 - RAG 파이프라인 실행: '{question}'")
     
     # 컨텍스트 포맷팅 (최적화된 함수 사용)
     context = format_context_optimized(refined)

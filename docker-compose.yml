@@ -29,10 +29,10 @@ services:
       uvicorn app.main:app
       --host 0.0.0.0 --port 8000 --reload
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://localhost:8000/health || exit 1"]
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/health')\" || exit 1"]
       interval: 10s
-      timeout: 3s
-      retries: 5
+      timeout: 5s
+      retries: 3
     restart: unless-stopped
     environment:
       - PYTHONPATH=/app
@@ -42,6 +42,24 @@ services:
       redis:
         condition: service_healthy
 
+  # React 웹 UI (사용자용) - 개발 모드
+  web:
+    build:
+      context: ./web
+      dockerfile: Dockerfile.dev
+      args:
+        VITE_API_BASE_URL: http://localhost:8000
+    container_name: insurance-rag-web
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./web:/app
+      - /app/node_modules  # node_modules는 컨테이너 내부 유지
+    depends_on:
+      - api
+    restart: unless-stopped
+
+  # Streamlit UI (개발자/모니터링용)
   ui:
     build:
       context: .

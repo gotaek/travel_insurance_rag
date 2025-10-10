@@ -25,7 +25,15 @@ def _decide_answer_node(state: RAGState) -> str:
         return "answer_recommend"
     return "answer_qa"
 
-def _needs_web_edge(state: RAGState) -> str:
+def _route_from_planner(state: RAGState) -> str:
+    """planner 노드 이후 라우팅 결정"""
+    is_domain_related = state.get("is_domain_related", True)
+    
+    # 비도메인 질문은 바로 answer_qa로
+    if not is_domain_related:
+        return "answer_qa"
+    
+    # 도메인 관련 질문은 웹 검색 여부에 따라 분기
     return "websearch" if state.get("needs_web") else "search"
 
 def _quality_check_edge(state: RAGState) -> str:
@@ -71,7 +79,15 @@ def build_graph():
     g.add_node("replan", wrap_with_trace(replan_node, "replan"))
 
     g.set_entry_point("planner")
-    g.add_conditional_edges("planner", _needs_web_edge, {"websearch": "websearch", "search": "search"})
+    g.add_conditional_edges(
+        "planner", 
+        _route_from_planner, 
+        {
+            "websearch": "websearch", 
+            "search": "search",
+            "answer_qa": "answer_qa"  # 새로운 경로 추가
+        }
+    )
     g.add_edge("websearch", "search")
     g.add_edge("search", "rank_filter")
     g.add_edge("rank_filter", "verify_refine")

@@ -1,265 +1,144 @@
-# Docker helpers
-.PHONY: d.build d.up d.upd d.logs d.down ingest eval ui
+# Travel Insurance RAG System - Makefile
+# 도커 기반 개발 환경을 위한 간소화된 명령어들
 
-d.build:
-	docker compose build
+.PHONY: help dev build up down logs clean restart
 
-d.up:
+# 기본 도움말
+help:
+	@echo "🛡️ Travel Insurance RAG System"
+	@echo ""
+	@echo "🚀 개발 명령어:"
+	@echo "  make dev          - 개발 환경 전체 실행 (API + Web + Redis)"
+	@echo "  make up           - 백그라운드에서 전체 서비스 실행"
+	@echo "  make down         - 모든 서비스 중지"
+	@echo "  make restart      - 서비스 재시작"
+	@echo "  make logs         - 실시간 로그 확인"
+	@echo ""
+	@echo "🏗️ 빌드 명령어:"
+	@echo "  make build        - 모든 서비스 빌드"
+	@echo "  make build.web    - 웹 서비스만 빌드"
+	@echo "  make build.api    - API 서비스만 빌드"
+	@echo ""
+	@echo "🧪 테스트 명령어:"
+	@echo "  make test         - 전체 테스트 실행"
+	@echo "  make test.unit    - 단위 테스트만 실행"
+	@echo "  make test.integration - 통합 테스트만 실행"
+	@echo ""
+	@echo "📊 평가 명령어:"
+	@echo "  make eval         - 기본 평가 실행"
+	@echo "  make ingest       - 벡터 DB 재구성"
+	@echo ""
+	@echo "🧹 정리 명령어:"
+	@echo "  make clean        - 컨테이너 및 볼륨 정리"
+	@echo "  make clean.all    - 모든 데이터 정리 (주의!)"
+
+# =============================================================================
+# 개발 환경 명령어
+# =============================================================================
+
+dev:
+	@echo "🚀 개발 환경 실행 중..."
+	docker compose up --build
+
+up:
+	@echo "🚀 백그라운드에서 서비스 실행 중..."
 	docker compose up -d
 
-d.upd:
-	docker compose up
-
-d.logs:
-	docker compose logs -f --tail=200
-
-d.down:
+down:
+	@echo "🛑 서비스 중지 중..."
 	docker compose down
 
-ingest:
-	docker compose exec -T api bash scripts/rebuild_vector.sh
+restart:
+	@echo "🔄 서비스 재시작 중..."
+	docker compose restart
+
+logs:
+	@echo "📋 실시간 로그 확인 중..."
+	docker compose logs -f --tail=100
+
+# =============================================================================
+# 빌드 명령어
+# =============================================================================
+
+build:
+	@echo "🏗️ 전체 서비스 빌드 중..."
+	docker compose build
+
+build.web:
+	@echo "🏗️ 웹 서비스 빌드 중..."
+	docker compose build web
+
+build.api:
+	@echo "🏗️ API 서비스 빌드 중..."
+	docker compose build api
+
+# =============================================================================
+# 테스트 명령어
+# =============================================================================
+
+test:
+	@echo "🧪 전체 테스트 실행 중..."
+	docker compose exec api pytest tests/ -v
+
+test.unit:
+	@echo "🔬 단위 테스트 실행 중..."
+	docker compose exec api pytest tests/unit/ -v
+
+test.integration:
+	@echo "🔗 통합 테스트 실행 중..."
+	docker compose exec api pytest tests/integration/ -v
+
+test.coverage:
+	@echo "📈 커버리지 포함 테스트 실행 중..."
+	docker compose exec api pytest tests/ --cov=graph --cov-report=term
+
+# =============================================================================
+# 평가 및 데이터 명령어
+# =============================================================================
 
 eval:
-	docker compose exec -T api python eval/simple_eval.py
+	@echo "📊 기본 평가 실행 중..."
+	docker compose exec api python eval/simple_eval.py
 
-eval.analysis:
-	docker compose exec -T api python eval/analysis_report.py
+ingest:
+	@echo "📚 벡터 DB 재구성 중..."
+	docker compose exec api bash scripts/rebuild_vector.sh
 
-eval.simple:
-	docker compose exec -T api python eval/simple_eval.py
+# =============================================================================
+# 정리 명령어
+# =============================================================================
 
-eval.basic:
-	@echo "🚀 기본 평가 시스템 실행..."
-	docker compose exec -T api python eval/simple_eval.py
+clean:
+	@echo "🧹 컨테이너 및 볼륨 정리 중..."
+	docker compose down -v
+	docker system prune -f
 
-eval.basic.local:
-	@echo "🚀 로컬에서 기본 평가 실행..."
-	python eval/simple_eval.py
+clean.all:
+	@echo "⚠️ 모든 데이터 정리 중... (주의: 되돌릴 수 없습니다!)"
+	docker compose down -v --remove-orphans
+	docker system prune -af
+	docker volume prune -f
 
-eval.basic.debug:
-	@echo "🔍 기본 평가 디버그 모드 실행..."
-	docker compose exec -T api python -u eval/simple_eval.py
+# =============================================================================
+# 특별 명령어 (필요시 사용)
+# =============================================================================
 
-eval.basic.clean:
-	@echo "🧹 기본 평가 결과 정리..."
-	docker compose exec -T api rm -rf eval/out/simple_eval_*
+# API만 실행 (웹 없이)
+api.only:
+	@echo "🔧 API 서비스만 실행 중..."
+	docker compose up api redis --build
 
-eval.basic.help:
-	@echo "📋 기본 평가 시스템 명령어 도움말"
-	@echo ""
-	@echo "🚀 실행 명령어:"
-	@echo "  make eval              - 기본 평가 실행 (simple_eval.py)"
-	@echo "  make eval.basic        - 기본 평가 시스템 실행"
-	@echo "  make eval.basic.local  - 로컬에서 기본 평가 실행"
-	@echo "  make eval.simple       - 기본 평가 실행 (별칭)"
-	@echo ""
-	@echo "🔍 디버그 명령어:"
-	@echo "  make eval.basic.debug  - 디버그 모드로 평가 실행"
-	@echo "  make eval.basic.clean  - 평가 결과 파일 정리"
-	@echo ""
-	@echo "📊 결과 확인:"
-	@echo "  eval/out/simple_eval_results.csv   - 상세 평가 결과 (CSV)"
-	@echo "  eval/out/simple_eval_results.json  - 상세 평가 결과 (JSON)"
-	@echo "  eval/out/simple_eval_summary.json  - 요약 통계"
-	@echo ""
-	@echo "📈 평가 메트릭:"
-	@echo "  - 응답시간: RAG 시스템 응답 속도"
-	@echo "  - 답변길이: 생성된 답변의 길이"
-	@echo "  - 컨텍스트수: 검색된 문서 개수"
-	@echo "  - 키워드매칭: 정답 키워드와의 일치도"
-	@echo "  - 품질점수: 종합적인 답변 품질 점수"
+# 웹만 실행 (API 없이, 로컬 API 사용)
+web.only:
+	@echo "🌐 웹 서비스만 실행 중..."
+	docker compose up web --build
 
+# Streamlit UI 실행
 ui:
-	docker compose exec api streamlit run ui/app.py --server.port 8501 --server.address 0.0.0.0
+	@echo "📊 Streamlit UI 실행 중..."
+	docker compose up ui --build
 
-# Docker 환경에서 테스트 실행
-.PHONY: test-docker test-unit-docker test-integration-docker test-benchmark-docker
-
-test-docker:
-	@echo "🧪 도커 환경에서 전체 테스트 실행..."
-	docker compose exec api bash -c 'export PATH=$$PATH:/home/appuser/.local/bin && pytest tests/ -v'
-
-test-unit-docker:
-	@echo "🔬 도커 환경에서 단위 테스트 실행..."
-	docker compose exec api bash -c 'export PATH=$$PATH:/home/appuser/.local/bin && pytest tests/unit/ -v'
-
-test-integration-docker:
-	@echo "🔗 도커 환경에서 통합 테스트 실행..."
-	docker compose exec api bash -c 'export PATH=$$PATH:/home/appuser/.local/bin && pytest tests/integration/ -v'
-
-test-benchmark-docker:
-	@echo "📊 도커 환경에서 벤치마크 테스트 실행..."
-	docker compose exec api bash -c 'export PATH=$$PATH:/home/appuser/.local/bin && pytest tests/ -v -m benchmark'
-
-test-coverage-docker:
-	@echo "📈 도커 환경에서 커버리지 포함 테스트 실행..."
-	docker compose exec api bash -c 'export PATH=$$PATH:/home/appuser/.local/bin && pytest tests/ --cov=graph --cov-report=term'
-
-# Planner 노드 전용 테스트
-.PHONY: test-planner test-planner-unit test-planner-integration
-
-test-planner:
-	@echo "📋 Planner 노드 전체 테스트 실행..."
-	docker compose exec api bash -c 'export PATH=$$PATH:/home/appuser/.local/bin && pytest tests/unit/test_planner_fallback.py tests/integration/test_planner_integration.py -v'
-
-test-planner-unit:
-	@echo "🔬 Planner 노드 단위 테스트 실행..."
-	docker compose exec api bash -c 'export PATH=$$PATH:/home/appuser/.local/bin && pytest tests/unit/test_planner_fallback.py -v'
-
-test-planner-integration:
-	@echo "🔗 Planner 노드 통합 테스트 실행..."
-	docker compose exec api bash -c 'export PATH=$$PATH:/home/appuser/.local/bin && pytest tests/integration/test_planner_integration.py -v'
-
-# Websearch 노드 전용 테스트
-.PHONY: test-websearch test-websearch-unit test-websearch-integration
-
-test-websearch:
-	@echo "🔍 Websearch 노드 전체 테스트 실행..."
-	docker compose exec api bash -c 'export PATH=$$PATH:/home/appuser/.local/bin && pytest tests/unit/test_websearch.py tests/integration/test_websearch_integration.py -v'
-
-test-websearch-unit:
-	@echo "🔬 Websearch 노드 단위 테스트 실행..."
-	docker compose exec api bash -c 'export PATH=$$PATH:/home/appuser/.local/bin && pytest tests/unit/test_websearch.py -v'
-
-test-websearch-integration:
-	@echo "🔗 Websearch 노드 통합 테스트 실행..."
-	docker compose exec api bash -c 'export PATH=$$PATH:/home/appuser/.local/bin && pytest tests/integration/test_websearch_integration.py -v'
-
-
-# Search 노드 전용 테스트
-.PHONY: test-search test-search-unit test-search-integration
-
-test-search:
-	@echo "🔍 Search 노드 전체 테스트 실행..."
-	docker compose exec api bash -c 'export PATH=$$PATH:/home/appuser/.local/bin && pytest tests/unit/test_search.py tests/integration/test_search_integration.py -v'
-
-test-search-unit:
-	@echo "🔬 Search 노드 단위 테스트 실행..."
-	docker compose exec api bash -c 'export PATH=$$PATH:/home/appuser/.local/bin && pytest tests/unit/test_search.py -v'
-
-test-search-integration:
-	@echo "🔗 Search 노드 통합 테스트 실행..."
-	docker compose exec api bash -c 'export PATH=$$PATH:/home/appuser/.local/bin && pytest tests/integration/test_search_integration.py -v'
-
-
-# Rank Filter 노드 전용 테스트
-.PHONY: test-rank-filter test-rank-filter-unit test-rank-filter-integration
-
-test-rank-filter:
-	@echo "🔍 Rank Filter 노드 전체 테스트 실행..."
-	docker compose exec api bash -c 'export PATH=$$PATH:/home/appuser/.local/bin && pytest tests/unit/test_rank_filter.py tests/integration/test_rank_filter_integration.py -v'
-
-test-rank-filter-unit:
-	@echo "🔬 Rank Filter 노드 단위 테스트 실행..."
-	docker compose exec api bash -c 'export PATH=$$PATH:/home/appuser/.local/bin && pytest tests/unit/test_rank_filter.py -v'
-
-test-rank-filter-integration:
-	@echo "🔗 Rank Filter 노드 통합 테스트 실행..."
-	docker compose exec api bash -c 'export PATH=$$PATH:/home/appuser/.local/bin && pytest tests/integration/test_rank_filter_integration.py -v'
-
-
-# Verify Refine 노드 전용 테스트
-.PHONY: test-verify-refine test-verify-refine-unit test-verify-refine-integration
-
-test-verify-refine:
-	@echo "🔍 Verify Refine 노드 전체 테스트 실행..."
-	docker compose exec api bash -c 'export PATH=$$PATH:/home/appuser/.local/bin && pytest tests/unit/test_verify_refine.py tests/integration/test_verify_refine_integration.py -v'
-
-test-verify-refine-unit:
-	@echo "🔬 Verify Refine 노드 단위 테스트 실행..."
-	docker compose exec api bash -c 'export PATH=$$PATH:/home/appuser/.local/bin && pytest tests/unit/test_verify_refine.py -v'
-test-verify-refine-integration:
-	@echo "🔗 Verify Refine 노드 통합 테스트 실행..."
-	docker compose exec api bash -c 'export PATH=$$PATH:/home/appuser/.local/bin && pytest tests/integration/test_verify_refine_integration.py -v'
-
-# QA 노드 전용 테스트
-.PHONY: test-qa test-qa-unit test-qa-integration
-
-test-qa:
-	@echo "🔍 QA 노드 전체 테스트 실행..."
-	docker compose exec api bash -c 'export PATH=$$PATH:/home/appuser/.local/bin && pytest tests/unit/test_qa.py tests/integration/test_qa_integration.py -v'
-
-test-qa-unit:
-	@echo "🔬 QA 노드 단위 테스트 실행..."
-	docker compose exec api bash -c 'export PATH=$$PATH:/home/appuser/.local/bin && pytest tests/unit/test_qa.py -v'
-
-test-qa-integration:
-	@echo "🔗 QA 노드 통합 테스트 실행..."
-	docker compose exec api bash -c 'export PATH=$$PATH:/home/appuser/.local/bin && pytest tests/integration/test_qa_integration.py -v'
-
-
-# Recommend 노드 전용 테스트
-.PHONY: test-recommend test-recommend-unit test-recommend-integration
-
-test-recommend:
-	@echo "🔍 Recommend 노드 전체 테스트 실행..."
-	docker compose exec api bash -c 'export PATH=$$PATH:/home/appuser/.local/bin && pytest tests/unit/test_recommend.py tests/integration/test_recommend_integration.py -v'
-
-test-recommend-unit:
-	@echo "🔬 Recommend 노드 단위 테스트 실행..."
-	docker compose exec api bash -c 'export PATH=$$PATH:/home/appuser/.local/bin && pytest tests/unit/test_recommend.py -v'
-
-test-recommend-integration:
-	@echo "🔗 Recommend 노드 통합 테스트 실행..."
-	docker compose exec api bash -c 'export PATH=$$PATH:/home/appuser/.local/bin && pytest tests/integration/test_recommend_integration.py -v'
-
-
-# Summarize 노드 전용 테스트
-.PHONY: test-summarize test-summarize-unit test-summarize-integration
-
-test-summarize:
-	@echo "🔍 Summarize 노드 전체 테스트 실행..."
-	docker compose exec api bash -c 'export PATH=$$PATH:/home/appuser/.local/bin && pytest tests/unit/test_summarize.py tests/integration/test_summarize_integration.py -v'
-
-test-summarize-unit:
-	@echo "🔬 Summarize 노드 단위 테스트 실행..."
-	docker compose exec api bash -c 'export PATH=$$PATH:/home/appuser/.local/bin && pytest tests/unit/test_summarize.py -v'
-
-test-summarize-integration:
-	@echo "🔗 Summarize 노드 통합 테스트 실행..."
-	docker compose exec api bash -c 'export PATH=$$PATH:/home/appuser/.local/bin && pytest tests/integration/test_summarize_integration.py -v'
-
-# Compare 노드 전용 테스트
-.PHONY: test-compare test-compare-unit test-compare-integration
-
-test-compare:
-	@echo "🔍 Compare 노드 전체 테스트 실행..."
-	docker compose exec api bash -c 'export PATH=$$PATH:/home/appuser/.local/bin && pytest tests/unit/test_compare.py tests/integration/test_compare_integration.py -v'
-
-test-compare-unit:
-	@echo "🔬 Compare 노드 단위 테스트 실행..."
-	docker compose exec api bash -c 'export PATH=$$PATH:/home/appuser/.local/bin && pytest tests/unit/test_compare.py -v'
-
-test-compare-integration:
-	@echo "🔗 Compare 노드 통합 테스트 실행..."
-	docker compose exec api bash -c 'export PATH=$$PATH:/home/appuser/.local/bin && pytest tests/integration/test_compare_integration.py -v'
-
-# Reevaluate 노드 전용 테스트
-.PHONY: test-reevaluate test-reevaluate-unit test-reevaluate-integration
-
-test-reevaluate:
-	@echo "🔍 Reevaluate 노드 전체 테스트 실행..."
-	docker compose exec api bash -c 'export PATH=$$PATH:/home/appuser/.local/bin && pytest tests/unit/test_reevaluate.py tests/integration/test_reevaluate_integration.py -v'
-
-test-reevaluate-unit:
-	@echo "🔬 Reevaluate 노드 단위 테스트 실행..."
-	docker compose exec api bash -c 'export PATH=$$PATH:/home/appuser/.local/bin && pytest tests/unit/test_reevaluate.py -v'
-
-test-reevaluate-integration:
-	@echo "🔗 Reevaluate 노드 통합 테스트 실행..."
-	docker compose exec api bash -c 'export PATH=$$PATH:/home/appuser/.local/bin && pytest tests/integration/test_reevaluate_integration.py -v'
-
-# Replan 노드 전용 테스트
-.PHONY: test-replan test-replan-unit test-replan-integration
-
-test-replan:
-	@echo "🔍 Replan 노드 전체 테스트 실행..."
-	docker compose exec api bash -c 'export PATH=$$PATH:/home/appuser/.local/bin && pytest tests/unit/test_replan.py tests/integration/test_replan_integration.py -v'
-
-test-replan-unit:
-	@echo "🔬 Replan 노드 단위 테스트 실행..."
-	docker compose exec api bash -c 'export PATH=$$PATH:/home/appuser/.local/bin && pytest tests/unit/test_replan.py -v'
-
-test-replan-integration:
-	@echo "🔗 Replan 노드 통합 테스트 실행..."
-	docker compose exec api bash -c 'export PATH=$$PATH:/home/appuser/.local/bin && pytest tests/integration/test_replan_integration.py -v'
+# 프로덕션 빌드 (필요시)
+prod:
+	@echo "🚀 프로덕션 빌드 실행 중..."
+	docker compose -f docker-compose.yml -f docker-compose.prod.yml up --build -d
