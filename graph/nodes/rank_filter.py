@@ -201,9 +201,17 @@ def rank_filter_node(state: Dict[str, Any]) -> Dict[str, Any]:
     # 4. 품질 필터링
     filtered = _quality_filter(diverse)
     
-    # 5. 최종 정렬 및 Top-k 선택 (확대)
+    # 5. 최종 정렬 및 Top-k 선택 (intent에 따른 동적 제한)
     sorted_passages = _sort_by_score(filtered)
-    topk = sorted_passages[:8]
+    
+    # intent 확인 (state에서 가져오기)
+    intent = state.get("intent", "qa")
+    if intent == "compare":
+        topk = sorted_passages[:10]  # 비교 질문은 더 많은 문서 필요
+        logger.info(f"🔍 [RankFilter] Compare intent - 상위 10개 선택")
+    else:
+        topk = sorted_passages[:8]   # 기본 문서 수
+        logger.info(f"🔍 [RankFilter] {intent} intent - 상위 8개 선택")
     
     
     # 메타데이터 추가
@@ -218,7 +226,8 @@ def rank_filter_node(state: Dict[str, Any]) -> Dict[str, Any]:
         "rerank_applied": True,
         "mmr_applied": True,
         "insurer_filter": insurer_filter,
-        "insurer_priority_sampling": insurer_filter is not None
+        "insurer_priority_sampling": insurer_filter is not None,
+        "intent_based_limit": intent == "compare"  # intent 기반 제한 적용 여부
     }
     
     return {**state, "refined": topk, "rank_meta": rank_meta}
