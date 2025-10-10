@@ -71,10 +71,38 @@ export function ChatWindow({ sessionId }: ChatWindowProps): JSX.Element {
 
   return (
     <div className="mx-auto w-full max-w-3xl py-4 px-4 flex flex-col gap-4 min-h-screen">
-      <div className={`flex-1 transition-all duration-500 ease-in-out ${hasMessages ? 'min-h-[40vh]' : 'flex items-center justify-center'}`}>
+      {/* 히어로 섹션 - 초기 상태에서만 표시 */}
+      <div className={`transition-all duration-700 ease-in-out ${
+        hasMessages 
+          ? 'opacity-0 transform -translate-y-8 pointer-events-none h-0 overflow-hidden' 
+          : 'opacity-100 transform translate-y-0 flex-1 flex flex-col items-center justify-center gap-8'
+      }`}>
+        {/* Travel Shield 메인 문구 */}
+        <div className="text-center space-y-4">
+          <h1 className="text-5xl font-bold bg-gradient-to-r from-blue-500 to-purple-600 bg-clip-text text-transparent">
+            Travel Shield
+          </h1>
+          <p className="text-xl text-gray-600 max-w-md">
+            여행자보험에 대해 무엇이든 물어보세요
+          </p>
+        </div>
+      </div>
+
+      {/* 메시지 리스트 - 채팅 상태에서 표시 */}
+      <div className={`transition-all duration-700 ease-in-out ${
+        hasMessages 
+          ? 'opacity-100 transform translate-y-0 flex-1' 
+          : 'opacity-0 transform translate-y-4 h-0 overflow-hidden'
+      }`}>
         <MessageList messages={messages} isLoading={isLoading} />
       </div>
-      <div className={`transition-all duration-500 ease-in-out ${hasMessages ? 'mt-auto' : ''}`}>
+
+      {/* 입력칸 - 항상 표시되지만 위치가 변경됨 */}
+      <div className={`transition-all duration-700 ease-in-out ${
+        hasMessages 
+          ? 'opacity-100 transform translate-y-0' 
+          : 'opacity-100 transform translate-y-0 w-full max-w-2xl mx-auto'
+      }`}>
         <ChatInput disabled={isLoading} onSend={handleSend} />
       </div>
     </div>

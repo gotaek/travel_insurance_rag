@@ -10,11 +10,21 @@ export function Header(): JSX.Element {
       role="banner"
     >
       <div className="mx-auto max-w-3xl px-4 py-4 flex items-center justify-center">
-        <div className="flex items-center gap-3">
-          <div className="text-2xl">🛡️</div>
-          <div className="font-bold text-gray-800 text-xl">트래블쉴드</div>
-          <div className="text-gray-500 text-base">TravelShield</div>
-        </div>
+        <h1 
+          className="text-2xl font-bold bg-gradient-to-r from-blue-500 to-purple-600 bg-clip-text text-transparent cursor-pointer hover:opacity-80 transition-opacity duration-200"
+          onClick={() => window.location.reload()}
+          role="button"
+          tabIndex={0}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              window.location.reload();
+            }
+          }}
+          aria-label="페이지 새로고침"
+        >
+          Travel Shield
+        </h1>
       </div>
     </header>
   );
